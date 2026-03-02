@@ -14,6 +14,6 @@ const LedState& getCurrentLedState();
 
 DeviceMode getCurrentMode();
 
-StatusSnapshot buildStatusSnapshot();
+StatusMessage buildStatusMessage(uint8_t degradedTier);
 
 }
