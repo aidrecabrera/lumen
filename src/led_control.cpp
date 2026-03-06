@@ -30,6 +30,12 @@ uint64_t getNowMs()
 }
 
 
+uint32_t getUptimeSec()
+{
+    return static_cast<uint32_t>(esp_timer_get_time() / 1000000ULL);
+}
+
+
 bool isThresholdConfigValid(const ThresholdConfig& thresholds)
 {
     if (!isfinite(thresholds.temp_min_c) ||
@@ -75,6 +81,35 @@ uint8_t scaleChannel(uint8_t brightness_pct, uint8_t channel_pct)
         static_cast<uint16_t>(channel_pct) * 255U;
 
     return static_cast<uint8_t>(scaled / 10000U);
+}
+
+
+uint8_t clampBrightness(float brightness_pct)
+{
+    if (brightness_pct <= 0.0f) {
+        return 0;
+    }
+
+    if (brightness_pct >= 100.0f) {
+        return 100;
+    }
+
+    return static_cast<uint8_t>(brightness_pct + 0.5f);
+}
+
+
+uint8_t computeAutonomousBrightness(float light_lux)
+{
+    if (!isfinite(light_lux) || light_lux <= 0.0f) {
+        return 100;
+    }
+
+    if (light_lux >= 10000.0f) {
+        return 0;
+    }
+
+    float ratio = 1.0f - (light_lux / 10000.0f);
+    return clampBrightness(ratio * 100.0f);
 }
 
 
@@ -188,16 +223,49 @@ bool init()
 
 AckMessage applyCommand(const CommandEnvelope& command)
 {
-    (void)command;
+    if (!is_initialized) {
+        return buildAck(command.command_id, AckResult::REJECTED, "not ready");
+    }
 
-    AckMessage ack = {};
-    return ack;
+    if (command.kind == CommandKind::MODE_CHANGE) {
+        return applyModeChange(command);
+    }
+
+    if (command.kind == CommandKind::CONFIG_UPDATE) {
+        return applyConfigChange(command);
+    }
+
+    if (command.kind == CommandKind::LED_CONTROL) {
+        return applyLedChange(command);
+    }
+
+    return rejectCommand(command, "bad command");
 }
 
 
 void controlTick(const SensorReading& latest_reading)
 {
-    (void)latest_reading;
+    if (!is_initialized) {
+        return;
+    }
+
+    if (current_mode != DeviceMode::AUTONOMOUS) {
+        return;
+    }
+
+    if (!current_led.power) {
+        return;
+    }
+
+    uint8_t next_brightness_pct = computeAutonomousBrightness(
+        latest_reading.light_lux);
+
+    if (next_brightness_pct == current_led.brightness_pct) {
+        return;
+    }
+
+    current_led.brightness_pct = next_brightness_pct;
+    applyToHardware(current_led);
 }
 
 
@@ -215,9 +283,12 @@ DeviceMode getCurrentMode()
 
 StatusMessage buildStatusMessage(uint8_t degraded_tier)
 {
-    (void)degraded_tier;
-
     StatusMessage status = {};
+    status.timestamp_ms = getNowMs();
+    status.mode = current_mode;
+    status.led = current_led;
+    status.degraded_tier = degraded_tier;
+    status.uptime_sec = getUptimeSec();
     return status;
 }
 }  // namespace LedControl
