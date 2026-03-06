@@ -1,9 +1,11 @@
 #include "led_control.h"
 
 #include <math.h>
+#include <string.h>
 
 #include <Adafruit_NeoPixel.h>
 #include <esp_log.h>
+#include <esp_timer.h>
 
 #include "config.h"
 #include "config_manager.h"
@@ -20,6 +22,12 @@ static bool is_initialized = false;
 static LedState current_led = {};
 static DeviceMode current_mode = DeviceMode::AUTONOMOUS;
 static ThresholdConfig current_thresholds = {};
+
+
+uint64_t getNowMs()
+{
+    return static_cast<uint64_t>(esp_timer_get_time() / 1000ULL);
+}
 
 
 bool isThresholdConfigValid(const ThresholdConfig& thresholds)
@@ -67,6 +75,46 @@ uint8_t scaleChannel(uint8_t brightness_pct, uint8_t channel_pct)
         static_cast<uint16_t>(channel_pct) * 255U;
 
     return static_cast<uint8_t>(scaled / 10000U);
+}
+
+
+void copyCommandId(char* dest, const char* src)
+{
+    if (src == nullptr) {
+        dest[0] = '\0';
+        return;
+    }
+
+    strncpy(dest, src, COMMAND_ID_MAX_LEN - 1);
+    dest[COMMAND_ID_MAX_LEN - 1] = '\0';
+}
+
+
+void copyReason(char* dest, const char* src)
+{
+    if (src == nullptr) {
+        dest[0] = '\0';
+        return;
+    }
+
+    strncpy(dest, src, REASON_MAX_LEN - 1);
+    dest[REASON_MAX_LEN - 1] = '\0';
+}
+
+
+AckMessage buildAck(
+    const char* command_id,
+    AckResult result,
+    const char* reason)
+{
+    AckMessage ack = {};
+    copyCommandId(ack.command_id, command_id);
+    ack.result = result;
+    ack.timestamp_ms = getNowMs();
+    ack.mode = current_mode;
+    ack.led = current_led;
+    copyReason(ack.reason, reason);
+    return ack;
 }
 
 
