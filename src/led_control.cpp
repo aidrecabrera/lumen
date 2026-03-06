@@ -1,11 +1,9 @@
 #include "led_control.h"
 
 #include <math.h>
-#include <string.h>
 
 #include <Adafruit_NeoPixel.h>
 #include <esp_log.h>
-#include <esp_timer.h>
 
 #include "config.h"
 #include "config_manager.h"
@@ -22,18 +20,6 @@ static bool is_initialized = false;
 static LedState current_led = {};
 static DeviceMode current_mode = DeviceMode::AUTONOMOUS;
 static ThresholdConfig current_thresholds = {};
-
-
-uint64_t getNowMs()
-{
-    return static_cast<uint64_t>(esp_timer_get_time() / 1000ULL);
-}
-
-
-uint32_t getUptimeSec()
-{
-    return static_cast<uint32_t>(esp_timer_get_time() / 1000000ULL);
-}
 
 
 bool isThresholdConfigValid(const ThresholdConfig& thresholds)
@@ -84,75 +70,6 @@ uint8_t scaleChannel(uint8_t brightness_pct, uint8_t channel_pct)
 }
 
 
-uint8_t clampBrightness(float brightness_pct)
-{
-    if (brightness_pct <= 0.0f) {
-        return 0;
-    }
-
-    if (brightness_pct >= 100.0f) {
-        return 100;
-    }
-
-    return static_cast<uint8_t>(brightness_pct + 0.5f);
-}
-
-
-uint8_t computeAutonomousBrightness(float light_lux)
-{
-    if (!isfinite(light_lux) || light_lux <= 0.0f) {
-        return 100;
-    }
-
-    if (light_lux >= 10000.0f) {
-        return 0;
-    }
-
-    float ratio = 1.0f - (light_lux / 10000.0f);
-    return clampBrightness(ratio * 100.0f);
-}
-
-
-void copyCommandId(char* dest, const char* src)
-{
-    if (src == nullptr) {
-        dest[0] = '\0';
-        return;
-    }
-
-    strncpy(dest, src, COMMAND_ID_MAX_LEN - 1);
-    dest[COMMAND_ID_MAX_LEN - 1] = '\0';
-}
-
-
-void copyReason(char* dest, const char* src)
-{
-    if (src == nullptr) {
-        dest[0] = '\0';
-        return;
-    }
-
-    strncpy(dest, src, REASON_MAX_LEN - 1);
-    dest[REASON_MAX_LEN - 1] = '\0';
-}
-
-
-AckMessage buildAck(
-    const char* command_id,
-    AckResult result,
-    const char* reason)
-{
-    AckMessage ack = {};
-    copyCommandId(ack.command_id, command_id);
-    ack.result = result;
-    ack.timestamp_ms = getNowMs();
-    ack.mode = current_mode;
-    ack.led = current_led;
-    copyReason(ack.reason, reason);
-    return ack;
-}
-
-
 void showOff()
 {
     led_strip.clear();
@@ -194,48 +111,6 @@ void loadPersistedState()
     current_led = config.led;
     current_thresholds = config.thresholds;
 }
-
-
-AckMessage rejectCommand(const CommandEnvelope& command, const char* reason)
-{
-    ESP_LOGW(TAG, "command rejected");
-    return buildAck(command.command_id, AckResult::REJECTED, reason);
-}
-
-
-AckMessage applyModeChange(const CommandEnvelope& command)
-{
-    current_mode = command.desired_mode;
-    ESP_LOGI(TAG, "mode changed");
-    return buildAck(command.command_id, AckResult::APPLIED, "mode applied");
-}
-
-
-AckMessage applyConfigChange(const CommandEnvelope& command)
-{
-    if (!isThresholdConfigValid(command.desired_thresholds)) {
-        return rejectCommand(command, "bad thresholds");
-    }
-
-    current_thresholds = command.desired_thresholds;
-    return buildAck(command.command_id, AckResult::APPLIED, "config applied");
-}
-
-
-AckMessage applyLedChange(const CommandEnvelope& command)
-{
-    if (current_mode == DeviceMode::AUTONOMOUS) {
-        return rejectCommand(command, "manual locked");
-    }
-
-    if (!isLedStateValid(command.desired_led)) {
-        return rejectCommand(command, "bad led state");
-    }
-
-    current_led = command.desired_led;
-    applyToHardware(current_led);
-    return buildAck(command.command_id, AckResult::APPLIED, "led applied");
-}
 }  // namespace
 
 
@@ -265,49 +140,16 @@ bool init()
 
 AckMessage applyCommand(const CommandEnvelope& command)
 {
-    if (!is_initialized) {
-        return buildAck(command.command_id, AckResult::REJECTED, "not ready");
-    }
+    (void)command;
 
-    if (command.kind == CommandKind::MODE_CHANGE) {
-        return applyModeChange(command);
-    }
-
-    if (command.kind == CommandKind::CONFIG_UPDATE) {
-        return applyConfigChange(command);
-    }
-
-    if (command.kind == CommandKind::LED_CONTROL) {
-        return applyLedChange(command);
-    }
-
-    return rejectCommand(command, "bad command");
+    AckMessage ack = {};
+    return ack;
 }
 
 
 void controlTick(const SensorReading& latest_reading)
 {
-    if (!is_initialized) {
-        return;
-    }
-
-    if (current_mode != DeviceMode::AUTONOMOUS) {
-        return;
-    }
-
-    if (!current_led.power) {
-        return;
-    }
-
-    uint8_t next_brightness_pct = computeAutonomousBrightness(
-        latest_reading.light_lux);
-
-    if (next_brightness_pct == current_led.brightness_pct) {
-        return;
-    }
-
-    current_led.brightness_pct = next_brightness_pct;
-    applyToHardware(current_led);
+    (void)latest_reading;
 }
 
 
@@ -325,12 +167,9 @@ DeviceMode getCurrentMode()
 
 StatusMessage buildStatusMessage(uint8_t degraded_tier)
 {
+    (void)degraded_tier;
+
     StatusMessage status = {};
-    status.timestamp_ms = getNowMs();
-    status.mode = current_mode;
-    status.led = current_led;
-    status.degraded_tier = degraded_tier;
-    status.uptime_sec = getUptimeSec();
     return status;
 }
 }  // namespace LedControl
