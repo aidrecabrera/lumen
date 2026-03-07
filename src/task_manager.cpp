@@ -3,10 +3,12 @@
 #include <string.h>
 
 #include <esp_log.h>
+#include <esp_timer.h>
 
 #include "config.h"
 #include "energy_tracker.h"
 #include "led_control.h"
+#include "mqtt_client.h"
 #include "sensors.h"
 #include "wifi_manager.h"
 
@@ -23,6 +25,12 @@ static const char* TAG = "task_manager";
 static TaskHandle_t sensors_task_handle = nullptr;
 static TaskHandle_t led_task_handle = nullptr;
 static TaskHandle_t mqtt_task_handle = nullptr;
+
+
+uint64_t getNowMs()
+{
+    return static_cast<uint64_t>(esp_timer_get_time() / 1000ULL);
+}
 
 
 void clearQueues()
@@ -129,6 +137,20 @@ void drainLatestSensor(
 }
 
 
+void drainStatusQueue()
+{
+    StatusMessage status = {};
+
+    while (xQueueReceive(status_to_mqtt_queue, &status, 0) == pdTRUE) {
+        bool was_published = MqttClient::publishStatus(status);
+        if (!was_published) {
+            ESP_LOGW(TAG, "status publish failed");
+            return;
+        }
+    }
+}
+
+
 void taskSensors(void* parameter)
 {
     (void)parameter;
@@ -168,6 +190,8 @@ void taskLed(void* parameter)
 
     SensorReading latest_reading = {};
     bool has_sensor_reading = false;
+    uint64_t last_energy_publish_ms = getNowMs();
+    uint64_t last_energy_persist_ms = getNowMs();
 
     while (true) {
         CommandEnvelope command = {};
@@ -193,26 +217,75 @@ void taskLed(void* parameter)
             }
         }
 
-        if (!has_sensor_reading) {
+        if (has_sensor_reading) {
+            LedState previous_led = LedControl::getCurrentLedState();
+            LedControl::controlTick(latest_reading);
+
+            LedState current_led = LedControl::getCurrentLedState();
+            if (!areLedStatesEqual(previous_led, current_led)) {
+                StatusMessage status = LedControl::buildStatusMessage(
+                    WifiManager::getDegradedTier());
+                bool sent_status = sendStatusMessage(status);
+                if (!sent_status) {
+                    ESP_LOGW(TAG, "status enqueue failed");
+                }
+            }
+        }
+
+        LedState applied_led = LedControl::getCurrentLedState();
+        EnergyTracker::updateFromLedState(applied_led);
+
+        uint64_t now_ms = getNowMs();
+        if (now_ms - last_energy_publish_ms >= ENERGY_PUBLISH_INTERVAL_MS) {
+            EnergyMessage energy = EnergyTracker::getSnapshot();
+            bool sent_energy = sendEnergyMessage(energy);
+            if (!sent_energy) {
+                ESP_LOGW(TAG, "energy enqueue failed");
+            }
+
+            last_energy_publish_ms = now_ms;
+        }
+
+        if (now_ms - last_energy_persist_ms >= ENERGY_PERSIST_INTERVAL_MS) {
+            bool was_persisted = EnergyTracker::requestPersist();
+            if (!was_persisted) {
+                ESP_LOGW(TAG, "energy persist request failed");
+            }
+
+            last_energy_persist_ms = now_ms;
+        }
+    }
+}
+
+
+void taskMqtt(void* parameter)
+{
+    (void)parameter;
+
+    SensorReading reading = {};
+    BaseType_t receive_result;
+
+    while (true) {
+        receive_result = xQueueReceive(
+            sensor_to_mqtt_queue,
+            &reading,
+            pdMS_TO_TICKS(100));
+
+        bool wifi_ready = WifiManager::connectOrPoll();
+        bool mqtt_ready = MqttClient::connectOrPoll();
+
+        if (receive_result == pdTRUE && wifi_ready && mqtt_ready) {
+            bool was_published = MqttClient::publishTelemetry(reading);
+            if (!was_published) {
+                ESP_LOGW(TAG, "telemetry publish failed");
+            }
+        }
+
+        if (!mqtt_ready) {
             continue;
         }
 
-        LedState previous_led = LedControl::getCurrentLedState();
-        LedControl::controlTick(latest_reading);
-
-        LedState current_led = LedControl::getCurrentLedState();
-        if (areLedStatesEqual(previous_led, current_led)) {
-            continue;
-        }
-
-        StatusMessage status = LedControl::buildStatusMessage(
-            WifiManager::getDegradedTier());
-        bool sent_status = sendStatusMessage(status);
-        if (!sent_status) {
-            ESP_LOGW(TAG, "status enqueue failed");
-        }
-
-        EnergyTracker::updateFromLedState(current_led);
+        drainStatusQueue();
     }
 }
 
@@ -292,8 +365,23 @@ bool createTasks()
         return false;
     }
 
+    BaseType_t mqtt_result = xTaskCreatePinnedToCore(
+        taskMqtt,
+        "TaskMQTT",
+        TASK_MQTT_STACK_BYTES,
+        nullptr,
+        TASK_MQTT_PRIORITY,
+        &mqtt_task_handle,
+        TASK_MQTT_CORE);
+
+    if (mqtt_result != pdPASS) {
+        ESP_LOGE(TAG, "TaskMQTT create failed");
+        return false;
+    }
+
     ESP_LOGI(TAG, "TaskSensors created");
     ESP_LOGI(TAG, "TaskLED created");
+    ESP_LOGI(TAG, "TaskMQTT created");
     return true;
 }
 }  // namespace TaskManager
