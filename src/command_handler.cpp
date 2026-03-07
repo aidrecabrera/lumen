@@ -52,9 +52,7 @@ void copyText(char* dest, size_t dest_len, const char* src)
 }
 
 
-bool readBoolField(
-    JsonVariantConst value,
-    bool& out_value)
+bool readBoolField(JsonVariantConst value, bool& out_value)
 {
     if (value.isNull()) {
         return false;
@@ -65,9 +63,7 @@ bool readBoolField(
 }
 
 
-bool readU8Field(
-    JsonVariantConst value,
-    uint8_t& out_value)
+bool readU8Field(JsonVariantConst value, uint8_t& out_value)
 {
     if (value.isNull()) {
         return false;
@@ -78,16 +74,50 @@ bool readU8Field(
 }
 
 
-bool decodeLedPayload(
+bool readFloatField(JsonVariantConst value, float& out_value)
+{
+    if (value.isNull()) {
+        return false;
+    }
+
+    out_value = value.as<float>();
+    return true;
+}
+
+
+bool readModeField(
+    JsonVariantConst value,
+    DeviceMode& out_mode)
+{
+    if (value.isNull()) {
+        return false;
+    }
+
+    uint8_t raw_mode = value.as<uint8_t>();
+    if (raw_mode == static_cast<uint8_t>(DeviceMode::AUTONOMOUS)) {
+        out_mode = DeviceMode::AUTONOMOUS;
+        return true;
+    }
+
+    if (raw_mode == static_cast<uint8_t>(DeviceMode::MANUAL)) {
+        out_mode = DeviceMode::MANUAL;
+        return true;
+    }
+
+    return false;
+}
+
+
+bool decodeBaseDocument(
     const uint8_t* payload,
     uint16_t length,
-    CommandEnvelope& out_command)
+    StaticJsonDocument<COMMAND_DOC_SIZE>& doc,
+    char* out_command_id,
+    size_t out_command_id_len)
 {
-    StaticJsonDocument<COMMAND_DOC_SIZE> doc;
     DeserializationError error = deserializeMsgPack(doc, payload, length);
-
     if (error) {
-        ESP_LOGW(TAG, "led decode failed");
+        ESP_LOGW(TAG, "decode failed");
         return false;
     }
 
@@ -96,6 +126,46 @@ bool decodeLedPayload(
         ESP_LOGW(TAG, "command id missing");
         return false;
     }
+
+    copyText(out_command_id, out_command_id_len, command_id);
+    return true;
+}
+
+
+void setEnvelopeBase(
+    CommandEnvelope& out_command,
+    const char* command_id,
+    CommandKind kind)
+{
+    memset(&out_command, 0, sizeof(out_command));
+    copyText(
+        out_command.command_id,
+        sizeof(out_command.command_id),
+        command_id);
+    out_command.kind = kind;
+    out_command.received_timestamp_ms = getNowMs();
+}
+
+
+bool decodeLedPayload(
+    const uint8_t* payload,
+    uint16_t length,
+    CommandEnvelope& out_command)
+{
+    StaticJsonDocument<COMMAND_DOC_SIZE> doc;
+    char command_id[COMMAND_ID_MAX_LEN] = {};
+
+    bool has_base = decodeBaseDocument(
+        payload,
+        length,
+        doc,
+        command_id,
+        sizeof(command_id));
+    if (!has_base) {
+        return false;
+    }
+
+    setEnvelopeBase(out_command, command_id, CommandKind::LED_CONTROL);
 
     bool has_power = readBoolField(
         doc["power"],
@@ -134,13 +204,122 @@ bool decodeLedPayload(
         return false;
     }
 
-    memset(&out_command, 0, sizeof(out_command));
-    copyText(
-        out_command.command_id,
-        sizeof(out_command.command_id),
-        command_id);
-    out_command.kind = CommandKind::LED_CONTROL;
-    out_command.received_timestamp_ms = getNowMs();
+    return true;
+}
+
+
+bool decodeConfigPayload(
+    const uint8_t* payload,
+    uint16_t length,
+    CommandEnvelope& out_command)
+{
+    StaticJsonDocument<COMMAND_DOC_SIZE> doc;
+    char command_id[COMMAND_ID_MAX_LEN] = {};
+
+    bool has_base = decodeBaseDocument(
+        payload,
+        length,
+        doc,
+        command_id,
+        sizeof(command_id));
+    if (!has_base) {
+        return false;
+    }
+
+    setEnvelopeBase(out_command, command_id, CommandKind::CONFIG_UPDATE);
+
+    JsonVariantConst thresholds = doc["thresholds"];
+    if (thresholds.isNull()) {
+        ESP_LOGW(TAG, "thresholds missing");
+        return false;
+    }
+
+    bool has_temp_min = readFloatField(
+        thresholds["temp_min_c"],
+        out_command.desired_thresholds.temp_min_c);
+    bool has_temp_max = readFloatField(
+        thresholds["temp_max_c"],
+        out_command.desired_thresholds.temp_max_c);
+    bool has_humidity_min = readFloatField(
+        thresholds["humidity_min_pct"],
+        out_command.desired_thresholds.humidity_min_pct);
+    bool has_humidity_max = readFloatField(
+        thresholds["humidity_max_pct"],
+        out_command.desired_thresholds.humidity_max_pct);
+
+    if (!has_temp_min ||
+        !has_temp_max ||
+        !has_humidity_min ||
+        !has_humidity_max) {
+        ESP_LOGW(TAG, "threshold payload incomplete");
+        return false;
+    }
+
+    if (out_command.desired_thresholds.temp_min_c >
+        out_command.desired_thresholds.temp_max_c) {
+        ESP_LOGW(TAG, "temperature thresholds invalid");
+        return false;
+    }
+
+    if (out_command.desired_thresholds.humidity_min_pct >
+        out_command.desired_thresholds.humidity_max_pct) {
+        ESP_LOGW(TAG, "humidity thresholds invalid");
+        return false;
+    }
+
+    return true;
+}
+
+
+bool decodeModePayload(
+    const uint8_t* payload,
+    uint16_t length,
+    CommandEnvelope& out_command)
+{
+    StaticJsonDocument<COMMAND_DOC_SIZE> doc;
+    char command_id[COMMAND_ID_MAX_LEN] = {};
+
+    bool has_base = decodeBaseDocument(
+        payload,
+        length,
+        doc,
+        command_id,
+        sizeof(command_id));
+    if (!has_base) {
+        return false;
+    }
+
+    setEnvelopeBase(out_command, command_id, CommandKind::MODE_CHANGE);
+
+    bool has_mode = readModeField(
+        doc["mode"],
+        out_command.desired_mode);
+    if (!has_mode) {
+        ESP_LOGW(TAG, "mode invalid");
+        return false;
+    }
+
+    return true;
+}
+
+
+bool enqueueCommand(const CommandEnvelope& command)
+{
+    if (command_dispatch_queue == nullptr) {
+        ESP_LOGW(TAG, "command queue missing");
+        return false;
+    }
+
+    BaseType_t send_result = xQueueSend(
+        command_dispatch_queue,
+        &command,
+        0);
+
+    if (send_result != pdTRUE) {
+        ESP_LOGW(TAG, "command queue full");
+        return false;
+    }
+
     return true;
 }
 }  // namespace
@@ -163,32 +342,24 @@ bool handleInbound(
     const uint8_t* payload,
     uint16_t length)
 {
-    if (command_dispatch_queue == nullptr) {
-        ESP_LOGW(TAG, "command queue missing");
-        return false;
-    }
-
-    if (!endsWith(topic, MQTT_TOPIC_CMD_LED_SUFFIX)) {
-        return false;
-    }
-
     CommandEnvelope command = {};
-    bool was_decoded = decodeLedPayload(payload, length, command);
+    bool was_decoded = false;
+
+    if (endsWith(topic, MQTT_TOPIC_CMD_LED_SUFFIX)) {
+        was_decoded = decodeLedPayload(payload, length, command);
+    } else if (endsWith(topic, MQTT_TOPIC_CMD_CONFIG_SUFFIX)) {
+        was_decoded = decodeConfigPayload(payload, length, command);
+    } else if (endsWith(topic, MQTT_TOPIC_CMD_MODE_SUFFIX)) {
+        was_decoded = decodeModePayload(payload, length, command);
+    } else {
+        ESP_LOGW(TAG, "unknown command topic");
+        return false;
+    }
 
     if (!was_decoded) {
         return false;
     }
 
-    BaseType_t send_result = xQueueSend(
-        command_dispatch_queue,
-        &command,
-        0);
-
-    if (send_result != pdTRUE) {
-        ESP_LOGW(TAG, "command queue full");
-        return false;
-    }
-
-    return true;
+    return enqueueCommand(command);
 }
 }  // namespace CommandHandler
