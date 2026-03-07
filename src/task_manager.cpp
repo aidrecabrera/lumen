@@ -2,6 +2,9 @@
 
 #include <esp_log.h>
 
+#include "config.h"
+#include "sensors.h"
+
 QueueHandle_t sensor_to_mqtt_queue = nullptr;
 QueueHandle_t sensor_to_led_queue = nullptr;
 QueueHandle_t command_dispatch_queue = nullptr;
@@ -47,6 +50,54 @@ void clearQueues()
     if (ack_to_mqtt_queue != nullptr) {
         vQueueDelete(ack_to_mqtt_queue);
         ack_to_mqtt_queue = nullptr;
+    }
+}
+
+
+bool sendSensorReading(
+    QueueHandle_t queue_handle,
+    const SensorReading& reading,
+    const char* queue_name)
+{
+    BaseType_t send_result = xQueueSend(queue_handle, &reading, 0);
+    if (send_result == pdTRUE) {
+        return true;
+    }
+
+    ESP_LOGW(TAG, "queue full %s", queue_name);
+    return false;
+}
+
+
+void taskSensors(void* parameter)
+{
+    (void)parameter;
+
+    TickType_t last_wake_ticks = xTaskGetTickCount();
+
+    while (true) {
+        vTaskDelayUntil(
+            &last_wake_ticks,
+            pdMS_TO_TICKS(SENSOR_INTERVAL_MS));
+
+        SensorReading reading = {};
+        bool was_read = Sensors::readCurrent(reading);
+        if (!was_read) {
+            continue;
+        }
+
+        bool sent_mqtt = sendSensorReading(
+            sensor_to_mqtt_queue,
+            reading,
+            "sensor_to_mqtt");
+        bool sent_led = sendSensorReading(
+            sensor_to_led_queue,
+            reading,
+            "sensor_to_led");
+
+        if (!sent_mqtt || !sent_led) {
+            continue;
+        }
     }
 }
 }  // namespace
@@ -97,6 +148,23 @@ bool createTasks()
     sensors_task_handle = nullptr;
     led_task_handle = nullptr;
     mqtt_task_handle = nullptr;
-    return false;
+
+    BaseType_t sensor_result = xTaskCreatePinnedToCore(
+        taskSensors,
+        "TaskSensors",
+        TASK_SENSORS_STACK_BYTES,
+        nullptr,
+        TASK_SENSORS_PRIORITY,
+        &sensors_task_handle,
+        TASK_SENSORS_CORE);
+
+    if (sensor_result != pdPASS) {
+        ESP_LOGE(TAG, "TaskSensors create failed");
+        sensors_task_handle = nullptr;
+        return false;
+    }
+
+    ESP_LOGI(TAG, "TaskSensors created");
+    return true;
 }
 }  // namespace TaskManager
