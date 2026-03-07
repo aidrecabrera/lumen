@@ -35,6 +35,7 @@ static char cmd_mode_topic[TOPIC_LEN] = {};
 static const char* WILL_PAYLOAD = "offline";
 static uint32_t reconnect_backoff_ms = WIFI_BACKOFF_BASE_MS;
 static uint64_t next_connect_ms = 0;
+static MqttClient::MqttInboundCallback inbound_callback = nullptr;
 
 
 uint64_t getNowMs()
@@ -328,6 +329,50 @@ bool encodeAck(
     encoded_len = serializeMsgPack(doc, payload_buf, payload_len);
     return encoded_len > 0;
 }
+
+
+bool isCommandTopic(const char* topic)
+{
+    if (topic == nullptr) {
+        return false;
+    }
+
+    if (strcmp(topic, cmd_led_topic) == 0) {
+        return true;
+    }
+
+    if (strcmp(topic, cmd_config_topic) == 0) {
+        return true;
+    }
+
+    if (strcmp(topic, cmd_mode_topic) == 0) {
+        return true;
+    }
+
+    return false;
+}
+
+
+void mqttCallback(char* topic, uint8_t* payload, unsigned int length)
+{
+    if (inbound_callback == nullptr) {
+        return;
+    }
+
+    if (!isCommandTopic(topic)) {
+        return;
+    }
+
+    if (length > UINT16_MAX) {
+        ESP_LOGW(TAG, "payload too large");
+        return;
+    }
+
+    inbound_callback(
+        topic,
+        payload,
+        static_cast<uint16_t>(length));
+}
 }  // namespace
 
 
@@ -352,6 +397,7 @@ bool init(const char* device_id)
     broker_client.setServer(MQTT_BROKER_IP, MQTT_BROKER_PORT);
     broker_client.setKeepAlive(MQTT_KEEPALIVE_SEC);
     broker_client.setBufferSize(COMMAND_DOC_SIZE);
+    broker_client.setCallback(mqttCallback);
 
     resetReconnectState();
     is_initialized = true;
@@ -510,7 +556,7 @@ bool setupSubscriptions()
 
 void registerInboundCallback(MqttInboundCallback callback)
 {
-    (void)callback;
+    inbound_callback = callback;
 }
 
 
