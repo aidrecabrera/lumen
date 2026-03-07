@@ -6,8 +6,10 @@
 #include <PubSubClient.h>
 #include <WiFiClient.h>
 #include <esp_log.h>
+#include <esp_timer.h>
 
 #include "config.h"
+#include "wifi_manager.h"
 
 namespace {
 static const char* TAG = "mqtt_client";
@@ -29,6 +31,14 @@ static char cmd_config_topic[TOPIC_LEN] = {};
 static char cmd_mode_topic[TOPIC_LEN] = {};
 
 static const char* WILL_PAYLOAD = "offline";
+static uint32_t reconnect_backoff_ms = WIFI_BACKOFF_BASE_MS;
+static uint64_t next_connect_ms = 0;
+
+
+uint64_t getNowMs()
+{
+    return static_cast<uint64_t>(esp_timer_get_time() / 1000ULL);
+}
 
 
 bool hasText(const char* text)
@@ -133,6 +143,48 @@ bool buildTopics()
         has_cmd_config &&
         has_cmd_mode;
 }
+
+
+uint32_t nextBackoffMs(uint32_t current_backoff_ms)
+{
+    if (current_backoff_ms >= WIFI_BACKOFF_MAX_MS) {
+        return WIFI_BACKOFF_MAX_MS;
+    }
+
+    uint32_t doubled_backoff_ms = current_backoff_ms * 2U;
+    if (doubled_backoff_ms > WIFI_BACKOFF_MAX_MS) {
+        return WIFI_BACKOFF_MAX_MS;
+    }
+
+    return doubled_backoff_ms;
+}
+
+
+void resetReconnectState()
+{
+    reconnect_backoff_ms = WIFI_BACKOFF_BASE_MS;
+    next_connect_ms = 0;
+}
+
+
+bool connectBroker()
+{
+    bool was_connected = broker_client.connect(
+        client_id_buf,
+        status_topic,
+        MQTT_QOS_STATUS,
+        true,
+        WILL_PAYLOAD);
+
+    if (!was_connected) {
+        ESP_LOGW(TAG, "broker connect failed");
+        return false;
+    }
+
+    resetReconnectState();
+    ESP_LOGI(TAG, "broker connected");
+    return true;
+}
 }  // namespace
 
 
@@ -158,7 +210,9 @@ bool init(const char* device_id)
     broker_client.setKeepAlive(MQTT_KEEPALIVE_SEC);
     broker_client.setBufferSize(COMMAND_DOC_SIZE);
 
+    resetReconnectState();
     is_initialized = true;
+
     ESP_LOGI(TAG, "mqtt initialized for %s", device_id_buf);
     return true;
 }
@@ -166,7 +220,38 @@ bool init(const char* device_id)
 
 bool connectOrPoll()
 {
-    return false;
+    if (!is_initialized) {
+        ESP_LOGW(TAG, "poll before init");
+        return false;
+    }
+
+    if (!WifiManager::isConnected()) {
+        return false;
+    }
+
+    if (broker_client.connected()) {
+        broker_client.loop();
+        return true;
+    }
+
+    uint64_t now_ms = getNowMs();
+    if (now_ms < next_connect_ms) {
+        return false;
+    }
+
+    bool was_connected = connectBroker();
+    if (!was_connected) {
+        next_connect_ms = now_ms + reconnect_backoff_ms;
+        reconnect_backoff_ms = nextBackoffMs(reconnect_backoff_ms);
+        return false;
+    }
+
+    bool has_subscriptions = setupSubscriptions();
+    if (!has_subscriptions) {
+        ESP_LOGW(TAG, "subscription setup failed");
+    }
+
+    return true;
 }
 
 
@@ -200,7 +285,21 @@ bool publishAck(const AckMessage& ack)
 
 bool setupSubscriptions()
 {
-    return false;
+    if (!broker_client.connected()) {
+        return false;
+    }
+
+    bool has_led = broker_client.subscribe(
+        cmd_led_topic,
+        MQTT_QOS_COMMAND);
+    bool has_config = broker_client.subscribe(
+        cmd_config_topic,
+        MQTT_QOS_COMMAND);
+    bool has_mode = broker_client.subscribe(
+        cmd_mode_topic,
+        MQTT_QOS_COMMAND);
+
+    return has_led && has_config && has_mode;
 }
 
 
