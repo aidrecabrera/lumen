@@ -1,9 +1,14 @@
 #include "task_manager.h"
 
+#include <string.h>
+
 #include <esp_log.h>
 
 #include "config.h"
+#include "energy_tracker.h"
+#include "led_control.h"
 #include "sensors.h"
+#include "wifi_manager.h"
 
 QueueHandle_t sensor_to_mqtt_queue = nullptr;
 QueueHandle_t sensor_to_led_queue = nullptr;
@@ -69,6 +74,61 @@ bool sendSensorReading(
 }
 
 
+bool sendStatusMessage(const StatusMessage& status)
+{
+    BaseType_t send_result = xQueueSend(status_to_mqtt_queue, &status, 0);
+    if (send_result == pdTRUE) {
+        return true;
+    }
+
+    ESP_LOGW(TAG, "queue full status_to_mqtt");
+    return false;
+}
+
+
+bool sendAckMessage(const AckMessage& ack)
+{
+    BaseType_t send_result = xQueueSend(ack_to_mqtt_queue, &ack, 0);
+    if (send_result == pdTRUE) {
+        return true;
+    }
+
+    ESP_LOGW(TAG, "queue full ack_to_mqtt");
+    return false;
+}
+
+
+bool sendEnergyMessage(const EnergyMessage& energy)
+{
+    BaseType_t send_result = xQueueSend(energy_to_mqtt_queue, &energy, 0);
+    if (send_result == pdTRUE) {
+        return true;
+    }
+
+    ESP_LOGW(TAG, "queue full energy_to_mqtt");
+    return false;
+}
+
+
+bool areLedStatesEqual(const LedState& left, const LedState& right)
+{
+    return memcmp(&left, &right, sizeof(LedState)) == 0;
+}
+
+
+void drainLatestSensor(
+    SensorReading& latest_reading,
+    bool& has_reading)
+{
+    SensorReading pending = {};
+
+    while (xQueueReceive(sensor_to_led_queue, &pending, 0) == pdTRUE) {
+        latest_reading = pending;
+        has_reading = true;
+    }
+}
+
+
 void taskSensors(void* parameter)
 {
     (void)parameter;
@@ -100,7 +160,61 @@ void taskSensors(void* parameter)
         }
     }
 }
-}  // namespace
+
+
+void taskLed(void* parameter)
+{
+    (void)parameter;
+
+    SensorReading latest_reading = {};
+    bool has_sensor_reading = false;
+
+    while (true) {
+        CommandEnvelope command = {};
+        BaseType_t receive_result = xQueueReceive(
+            command_dispatch_queue,
+            &command,
+            pdMS_TO_TICKS(LED_CONTROL_INTERVAL_MS));
+
+        drainLatestSensor(latest_reading, has_sensor_reading);
+
+        if (receive_result == pdTRUE) {
+            AckMessage ack = LedControl::applyCommand(command);
+            bool sent_ack = sendAckMessage(ack);
+            if (!sent_ack) {
+                ESP_LOGW(TAG, "ack enqueue failed");
+            }
+
+            StatusMessage status = LedControl::buildStatusMessage(
+                WifiManager::getDegradedTier());
+            bool sent_status = sendStatusMessage(status);
+            if (!sent_status) {
+                ESP_LOGW(TAG, "status enqueue failed");
+            }
+        }
+
+        if (!has_sensor_reading) {
+            continue;
+        }
+
+        LedState previous_led = LedControl::getCurrentLedState();
+        LedControl::controlTick(latest_reading);
+
+        LedState current_led = LedControl::getCurrentLedState();
+        if (areLedStatesEqual(previous_led, current_led)) {
+            continue;
+        }
+
+        StatusMessage status = LedControl::buildStatusMessage(
+            WifiManager::getDegradedTier());
+        bool sent_status = sendStatusMessage(status);
+        if (!sent_status) {
+            ESP_LOGW(TAG, "status enqueue failed");
+        }
+
+        EnergyTracker::updateFromLedState(current_led);
+    }
+}
 
 
 namespace TaskManager {
@@ -164,7 +278,22 @@ bool createTasks()
         return false;
     }
 
+    BaseType_t led_result = xTaskCreatePinnedToCore(
+        taskLed,
+        "TaskLED",
+        TASK_LED_STACK_BYTES,
+        nullptr,
+        TASK_LED_PRIORITY,
+        &led_task_handle,
+        TASK_LED_CORE);
+
+    if (led_result != pdPASS) {
+        ESP_LOGE(TAG, "TaskLED create failed");
+        return false;
+    }
+
     ESP_LOGI(TAG, "TaskSensors created");
+    ESP_LOGI(TAG, "TaskLED created");
     return true;
 }
 }  // namespace TaskManager
