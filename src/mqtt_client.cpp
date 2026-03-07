@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <ArduinoJson.h>
 #include <PubSubClient.h>
 #include <WiFiClient.h>
 #include <esp_log.h>
@@ -16,6 +17,7 @@ static const char* TAG = "mqtt_client";
 
 static constexpr size_t TOPIC_LEN = 96;
 static constexpr size_t CLIENT_ID_LEN = 40;
+static constexpr size_t ACK_TOPIC_LEN = 128;
 
 static WiFiClient wifi_client;
 static PubSubClient broker_client(wifi_client);
@@ -76,6 +78,32 @@ bool buildTopic(char* out_topic, size_t out_len, const char* suffix)
         MQTT_TOPIC_ROOT,
         device_id_buf,
         suffix);
+
+    if (written <= 0) {
+        return false;
+    }
+
+    if (static_cast<size_t>(written) >= out_len) {
+        return false;
+    }
+
+    return true;
+}
+
+
+bool buildAckTopic(
+    char* out_topic,
+    size_t out_len,
+    const char* command_id)
+{
+    int written = snprintf(
+        out_topic,
+        out_len,
+        "%s/%s/%s/%s",
+        MQTT_TOPIC_ROOT,
+        device_id_buf,
+        MQTT_TOPIC_ACK_PREFIX,
+        command_id);
 
     if (written <= 0) {
         return false;
@@ -185,6 +213,121 @@ bool connectBroker()
     ESP_LOGI(TAG, "broker connected");
     return true;
 }
+
+
+void fillLedObject(JsonObject led_obj, const LedState& led)
+{
+    led_obj["power"] = led.power;
+    led_obj["brightness_pct"] = led.brightness_pct;
+    led_obj["red_enabled"] = led.red_enabled;
+    led_obj["blue_enabled"] = led.blue_enabled;
+    led_obj["far_red_enabled"] = led.far_red_enabled;
+    led_obj["red_dist_pct"] = led.red_dist_pct;
+    led_obj["blue_dist_pct"] = led.blue_dist_pct;
+    led_obj["far_red_dist_pct"] = led.far_red_dist_pct;
+}
+
+
+bool publishPayload(
+    const char* topic,
+    const uint8_t* payload_buf,
+    size_t payload_len)
+{
+    if (!broker_client.connected()) {
+        ESP_LOGW(TAG, "publish while offline");
+        return false;
+    }
+
+    bool was_published = broker_client.publish(
+        topic,
+        payload_buf,
+        payload_len,
+        false);
+
+    if (!was_published) {
+        ESP_LOGW(TAG, "publish failed %s", topic);
+        return false;
+    }
+
+    return true;
+}
+
+
+bool encodeTelemetry(
+    const SensorReading& reading,
+    uint8_t* payload_buf,
+    size_t payload_len,
+    size_t& encoded_len)
+{
+    StaticJsonDocument<TELEMETRY_DOC_SIZE> doc;
+    doc["timestamp_ms"] = reading.timestamp_ms;
+    doc["light_lux"] = reading.light_lux;
+    doc["temperature_c"] = reading.temperature_c;
+    doc["humidity_pct"] = reading.humidity_pct;
+    doc["sequence"] = reading.sequence;
+
+    encoded_len = serializeMsgPack(doc, payload_buf, payload_len);
+    return encoded_len > 0;
+}
+
+
+bool encodeStatus(
+    const StatusMessage& status,
+    uint8_t* payload_buf,
+    size_t payload_len,
+    size_t& encoded_len)
+{
+    StaticJsonDocument<STATUS_DOC_SIZE> doc;
+    doc["timestamp_ms"] = status.timestamp_ms;
+    doc["mode"] = static_cast<uint8_t>(status.mode);
+    doc["degraded_tier"] = status.degraded_tier;
+    doc["uptime_sec"] = status.uptime_sec;
+
+    JsonObject led_obj = doc.createNestedObject("led");
+    fillLedObject(led_obj, status.led);
+
+    encoded_len = serializeMsgPack(doc, payload_buf, payload_len);
+    return encoded_len > 0;
+}
+
+
+bool encodeEnergy(
+    const EnergyMessage& energy,
+    uint8_t* payload_buf,
+    size_t payload_len,
+    size_t& encoded_len)
+{
+    StaticJsonDocument<ENERGY_DOC_SIZE> doc;
+    doc["timestamp_ms"] = energy.timestamp_ms;
+    doc["total_wh"] = energy.total_wh;
+    doc["session_wh"] = energy.session_wh;
+    doc["light_on_sec"] = energy.light_on_sec;
+    doc["max_brightness_sec"] = energy.max_brightness_sec;
+
+    encoded_len = serializeMsgPack(doc, payload_buf, payload_len);
+    return encoded_len > 0;
+}
+
+
+bool encodeAck(
+    const AckMessage& ack,
+    uint8_t* payload_buf,
+    size_t payload_len,
+    size_t& encoded_len)
+{
+    StaticJsonDocument<STATUS_DOC_SIZE> doc;
+    doc["command_id"] = ack.command_id;
+    doc["result"] = static_cast<uint8_t>(ack.result);
+    doc["timestamp_ms"] = ack.timestamp_ms;
+    doc["mode"] = static_cast<uint8_t>(ack.mode);
+    doc["reason"] = ack.reason;
+
+    JsonObject led_obj = doc.createNestedObject("led");
+    fillLedObject(led_obj, ack.led);
+
+    encoded_len = serializeMsgPack(doc, payload_buf, payload_len);
+    return encoded_len > 0;
+}
 }  // namespace
 
 
@@ -257,29 +400,91 @@ bool connectOrPoll()
 
 bool publishTelemetry(const SensorReading& reading)
 {
-    (void)reading;
-    return false;
+    uint8_t payload_buf[TELEMETRY_DOC_SIZE] = {};
+    size_t encoded_len = 0;
+
+    bool was_encoded = encodeTelemetry(
+        reading,
+        payload_buf,
+        sizeof(payload_buf),
+        encoded_len);
+
+    if (!was_encoded) {
+        ESP_LOGW(TAG, "telemetry encode failed");
+        return false;
+    }
+
+    return publishPayload(telemetry_topic, payload_buf, encoded_len);
 }
 
 
 bool publishStatus(const StatusMessage& status)
 {
-    (void)status;
-    return false;
+    uint8_t payload_buf[STATUS_DOC_SIZE] = {};
+    size_t encoded_len = 0;
+
+    bool was_encoded = encodeStatus(
+        status,
+        payload_buf,
+        sizeof(payload_buf),
+        encoded_len);
+
+    if (!was_encoded) {
+        ESP_LOGW(TAG, "status encode failed");
+        return false;
+    }
+
+    return publishPayload(status_topic, payload_buf, encoded_len);
 }
 
 
 bool publishEnergy(const EnergyMessage& energy)
 {
-    (void)energy;
-    return false;
+    uint8_t payload_buf[ENERGY_DOC_SIZE] = {};
+    size_t encoded_len = 0;
+
+    bool was_encoded = encodeEnergy(
+        energy,
+        payload_buf,
+        sizeof(payload_buf),
+        encoded_len);
+
+    if (!was_encoded) {
+        ESP_LOGW(TAG, "energy encode failed");
+        return false;
+    }
+
+    return publishPayload(energy_topic, payload_buf, encoded_len);
 }
 
 
 bool publishAck(const AckMessage& ack)
 {
-    (void)ack;
-    return false;
+    uint8_t payload_buf[STATUS_DOC_SIZE] = {};
+    char ack_topic[ACK_TOPIC_LEN] = {};
+    size_t encoded_len = 0;
+
+    bool has_topic = buildAckTopic(
+        ack_topic,
+        sizeof(ack_topic),
+        ack.command_id);
+    if (!has_topic) {
+        ESP_LOGW(TAG, "ack topic build failed");
+        return false;
+    }
+
+    bool was_encoded = encodeAck(
+        ack,
+        payload_buf,
+        sizeof(payload_buf),
+        encoded_len);
+
+    if (!was_encoded) {
+        ESP_LOGW(TAG, "ack encode failed");
+        return false;
+    }
+
+    return publishPayload(ack_topic, payload_buf, encoded_len);
 }
 
 
