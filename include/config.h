@@ -70,3 +70,8 @@ static constexpr uint32_t WIFI_BACKOFF_MAX_MS    = 30000;
 static constexpr uint8_t  WIFI_FAILURE_THRESHOLD = 10;
 static constexpr uint32_t WATCHDOG_TIMEOUT_MS    = 10000;
 static constexpr uint8_t  REBOOT_THRESHOLD       = 3;
+
+
+// Autonomous LED control: lux level at which brightness reaches zero.
+// Increase to keep LEDs on longer under bright ambient light.
+static constexpr float AUTONOMOUS_LUX_CEILING = 10000.0f;
