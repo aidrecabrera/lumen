@@ -104,11 +104,11 @@ uint8_t computeAutonomousBrightness(float light_lux)
         return 100;
     }
 
-    if (light_lux >= 10000.0f) {
+    if (light_lux >= AUTONOMOUS_LUX_CEILING) {
         return 0;
     }
 
-    float ratio = 1.0f - (light_lux / 10000.0f);
+    float ratio = 1.0f - (light_lux / AUTONOMOUS_LUX_CEILING);
     return clampBrightness(ratio * 100.0f);
 }
 
@@ -193,6 +193,60 @@ void loadPersistedState()
     current_mode = config.mode;
     current_led = config.led;
     current_thresholds = config.thresholds;
+}
+
+
+AckMessage rejectCommand(const CommandEnvelope& command, const char* reason)
+{
+    return buildAck(command.command_id, AckResult::REJECTED, reason);
+}
+
+
+AckMessage applyModeChange(const CommandEnvelope& command)
+{
+    current_mode = command.desired_mode;
+
+    bool was_saved = ConfigManager::saveMode(current_mode);
+    if (!was_saved) {
+        ESP_LOGW(TAG, "mode save failed");
+    }
+
+    return buildAck(command.command_id, AckResult::APPLIED, "");
+}
+
+
+AckMessage applyConfigChange(const CommandEnvelope& command)
+{
+    if (!isThresholdConfigValid(command.desired_thresholds)) {
+        return rejectCommand(command, "invalid thresholds");
+    }
+
+    current_thresholds = command.desired_thresholds;
+
+    bool was_saved = ConfigManager::saveThresholds(current_thresholds);
+    if (!was_saved) {
+        ESP_LOGW(TAG, "thresholds save failed");
+    }
+
+    return buildAck(command.command_id, AckResult::APPLIED, "");
+}
+
+
+AckMessage applyLedChange(const CommandEnvelope& command)
+{
+    if (!isLedStateValid(command.desired_led)) {
+        return rejectCommand(command, "invalid led state");
+    }
+
+    current_led = command.desired_led;
+    applyToHardware(current_led);
+
+    bool was_saved = ConfigManager::saveLedState(current_led);
+    if (!was_saved) {
+        ESP_LOGW(TAG, "led state save failed");
+    }
+
+    return buildAck(command.command_id, AckResult::APPLIED, "");
 }
 }  // namespace
 
