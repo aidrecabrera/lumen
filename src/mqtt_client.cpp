@@ -35,7 +35,7 @@ static char cmd_mode_topic[TOPIC_LEN] = {};
 static const char* WILL_PAYLOAD = "offline";
 static uint32_t reconnect_backoff_ms = WIFI_BACKOFF_BASE_MS;
 static uint64_t next_connect_ms = 0;
-static MqttClient::MqttInboundCallback inbound_callback = nullptr;
+static MqttInboundCallback inbound_callback = nullptr;  // typedef is global scope
 
 
 uint64_t getNowMs()
@@ -396,7 +396,10 @@ bool init(const char* device_id)
 
     broker_client.setServer(MQTT_BROKER_IP, MQTT_BROKER_PORT);
     broker_client.setKeepAlive(MQTT_KEEPALIVE_SEC);
-    broker_client.setBufferSize(COMMAND_DOC_SIZE);
+    bool buffer_ok = broker_client.setBufferSize(COMMAND_DOC_SIZE);
+    if (!buffer_ok) {
+        ESP_LOGW(TAG, "mqtt buffer resize failed");
+    }
     broker_client.setCallback(mqttCallback);
 
     resetReconnectState();
