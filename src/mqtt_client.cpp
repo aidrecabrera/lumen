@@ -396,9 +396,9 @@ bool init(const char* device_id)
 
     broker_client.setServer(MQTT_BROKER_IP, MQTT_BROKER_PORT);
     broker_client.setKeepAlive(MQTT_KEEPALIVE_SEC);
-    bool buffer_ok = broker_client.setBufferSize(COMMAND_DOC_SIZE);
-    if (!buffer_ok) {
-        ESP_LOGW(TAG, "mqtt buffer resize failed");
+    bool has_buffer = broker_client.setBufferSize(COMMAND_DOC_SIZE);
+    if (!has_buffer) {
+        ESP_LOGW(TAG, "mqtt buffer size set failed");
     }
     broker_client.setCallback(mqttCallback);
 

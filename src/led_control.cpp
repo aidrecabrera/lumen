@@ -196,8 +196,11 @@ void loadPersistedState()
 }
 
 
-AckMessage rejectCommand(const CommandEnvelope& command, const char* reason)
+AckMessage rejectCommand(
+    const CommandEnvelope& command,
+    const char* reason)
 {
+    ESP_LOGW(TAG, "command rejected");
     return buildAck(command.command_id, AckResult::REJECTED, reason);
 }
 
@@ -205,48 +208,35 @@ AckMessage rejectCommand(const CommandEnvelope& command, const char* reason)
 AckMessage applyModeChange(const CommandEnvelope& command)
 {
     current_mode = command.desired_mode;
-
-    bool was_saved = ConfigManager::saveMode(current_mode);
-    if (!was_saved) {
-        ESP_LOGW(TAG, "mode save failed");
-    }
-
-    return buildAck(command.command_id, AckResult::APPLIED, "");
+    ESP_LOGI(TAG, "mode changed");
+    return buildAck(command.command_id, AckResult::APPLIED, "mode applied");
 }
 
 
 AckMessage applyConfigChange(const CommandEnvelope& command)
 {
     if (!isThresholdConfigValid(command.desired_thresholds)) {
-        return rejectCommand(command, "invalid thresholds");
+        return rejectCommand(command, "bad thresholds");
     }
 
     current_thresholds = command.desired_thresholds;
-
-    bool was_saved = ConfigManager::saveThresholds(current_thresholds);
-    if (!was_saved) {
-        ESP_LOGW(TAG, "thresholds save failed");
-    }
-
-    return buildAck(command.command_id, AckResult::APPLIED, "");
+    return buildAck(command.command_id, AckResult::APPLIED, "config applied");
 }
 
 
 AckMessage applyLedChange(const CommandEnvelope& command)
 {
+    if (current_mode == DeviceMode::AUTONOMOUS) {
+        return rejectCommand(command, "manual locked");
+    }
+
     if (!isLedStateValid(command.desired_led)) {
-        return rejectCommand(command, "invalid led state");
+        return rejectCommand(command, "bad led state");
     }
 
     current_led = command.desired_led;
     applyToHardware(current_led);
-
-    bool was_saved = ConfigManager::saveLedState(current_led);
-    if (!was_saved) {
-        ESP_LOGW(TAG, "led state save failed");
-    }
-
-    return buildAck(command.command_id, AckResult::APPLIED, "");
+    return buildAck(command.command_id, AckResult::APPLIED, "led applied");
 }
 }  // namespace
 
