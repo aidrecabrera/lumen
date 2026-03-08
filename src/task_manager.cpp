@@ -5,6 +5,7 @@
 #include <esp_log.h>
 #include <esp_timer.h>
 
+#include "command_handler.h"
 #include "config.h"
 #include "energy_tracker.h"
 #include "led_control.h"
@@ -84,7 +85,8 @@ bool sendSensorReading(
 
 bool sendStatusMessage(const StatusMessage& status)
 {
-    BaseType_t send_result = xQueueSend(status_to_mqtt_queue, &status, 0);
+    BaseType_t send_result = xQueueSend(
+        status_to_mqtt_queue, &status, 0);
     if (send_result == pdTRUE) {
         return true;
     }
@@ -96,7 +98,8 @@ bool sendStatusMessage(const StatusMessage& status)
 
 bool sendAckMessage(const AckMessage& ack)
 {
-    BaseType_t send_result = xQueueSend(ack_to_mqtt_queue, &ack, 0);
+    BaseType_t send_result = xQueueSend(
+        ack_to_mqtt_queue, &ack, 0);
     if (send_result == pdTRUE) {
         return true;
     }
@@ -108,7 +111,8 @@ bool sendAckMessage(const AckMessage& ack)
 
 bool sendEnergyMessage(const EnergyMessage& energy)
 {
-    BaseType_t send_result = xQueueSend(energy_to_mqtt_queue, &energy, 0);
+    BaseType_t send_result = xQueueSend(
+        energy_to_mqtt_queue, &energy, 0);
     if (send_result == pdTRUE) {
         return true;
     }
@@ -147,6 +151,49 @@ void drainStatusQueue()
             ESP_LOGW(TAG, "status publish failed");
             return;
         }
+    }
+}
+
+
+void drainEnergyQueue()
+{
+    EnergyMessage energy = {};
+
+    while (xQueueReceive(energy_to_mqtt_queue, &energy, 0) == pdTRUE) {
+        bool was_published = MqttClient::publishEnergy(energy);
+        if (!was_published) {
+            ESP_LOGW(TAG, "energy publish failed");
+            return;
+        }
+    }
+}
+
+
+void drainAckQueue()
+{
+    AckMessage ack = {};
+
+    while (xQueueReceive(ack_to_mqtt_queue, &ack, 0) == pdTRUE) {
+        bool was_published = MqttClient::publishAck(ack);
+        if (!was_published) {
+            ESP_LOGW(TAG, "ack publish failed");
+            return;
+        }
+    }
+}
+
+
+// Intentional deviation: wraps bool-returning handleInbound
+// to match the void callback signature expected by PubSubClient.
+void inboundCommandBridge(
+    const char* topic,
+    const uint8_t* payload,
+    uint16_t length)
+{
+    bool was_handled = CommandHandler::handleInbound(
+        topic, payload, length);
+    if (!was_handled) {
+        ESP_LOGW(TAG, "inbound command not handled");
     }
 }
 
@@ -236,7 +283,8 @@ void taskLed(void* parameter)
         EnergyTracker::updateFromLedState(applied_led);
 
         uint64_t now_ms = getNowMs();
-        if (now_ms - last_energy_publish_ms >= ENERGY_PUBLISH_INTERVAL_MS) {
+        if (now_ms - last_energy_publish_ms >=
+            ENERGY_PUBLISH_INTERVAL_MS) {
             EnergyMessage energy = EnergyTracker::getSnapshot();
             bool sent_energy = sendEnergyMessage(energy);
             if (!sent_energy) {
@@ -246,10 +294,11 @@ void taskLed(void* parameter)
             last_energy_publish_ms = now_ms;
         }
 
-        if (now_ms - last_energy_persist_ms >= ENERGY_PERSIST_INTERVAL_MS) {
+        if (now_ms - last_energy_persist_ms >=
+            ENERGY_PERSIST_INTERVAL_MS) {
             bool was_persisted = EnergyTracker::requestPersist();
             if (!was_persisted) {
-                ESP_LOGW(TAG, "energy persist request failed");
+                ESP_LOGW(TAG, "energy persist failed");
             }
 
             last_energy_persist_ms = now_ms;
@@ -262,11 +311,12 @@ void taskMqtt(void* parameter)
 {
     (void)parameter;
 
-    SensorReading reading = {};
-    BaseType_t receive_result;
+    MqttClient::registerInboundCallback(inboundCommandBridge);
+    uint64_t last_heartbeat_ms = getNowMs();
 
     while (true) {
-        receive_result = xQueueReceive(
+        SensorReading reading = {};
+        BaseType_t receive_result = xQueueReceive(
             sensor_to_mqtt_queue,
             &reading,
             pdMS_TO_TICKS(100));
@@ -286,8 +336,26 @@ void taskMqtt(void* parameter)
         }
 
         drainStatusQueue();
+        drainEnergyQueue();
+        drainAckQueue();
+
+        uint64_t now_ms = getNowMs();
+        if (now_ms - last_heartbeat_ms <
+            MQTT_HEARTBEAT_INTERVAL_MS) {
+            continue;
+        }
+
+        StatusMessage heartbeat = LedControl::buildStatusMessage(
+            WifiManager::getDegradedTier());
+        bool was_published = MqttClient::publishStatus(heartbeat);
+        if (!was_published) {
+            ESP_LOGW(TAG, "heartbeat publish failed");
+        }
+
+        last_heartbeat_ms = now_ms;
     }
 }
+}  // namespace
 
 
 namespace TaskManager {
