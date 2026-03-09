@@ -39,6 +39,7 @@ static constexpr const char* MQTT_BROKER_IP = "192.168.1.50";
 static constexpr uint16_t MQTT_BROKER_PORT = 1883;
 
 static constexpr const char* MQTT_TOPIC_ROOT = "spot";
+static constexpr const char* MQTT_TOPIC_AVAILABILITY_SUFFIX = "availability";
 static constexpr const char* MQTT_TOPIC_TELEMETRY_SUFFIX = "telemetry";
 static constexpr const char* MQTT_TOPIC_STATUS_SUFFIX = "status";
 static constexpr const char* MQTT_TOPIC_ENERGY_SUFFIX = "energy";
