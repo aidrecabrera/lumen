@@ -16,4 +16,4 @@ DeviceMode getCurrentMode();
 
 StatusMessage buildStatusMessage(uint8_t degradedTier);
 
-}
+}  // namespace LedControl

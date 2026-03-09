@@ -1,7 +1,7 @@
 #pragma once
 
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 namespace WifiManager {
 
@@ -15,4 +15,4 @@ uint8_t getDegradedTier();
 
 void resetReconnect();
 
-}
+}  // namespace WifiManager

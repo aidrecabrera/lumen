@@ -7,22 +7,11 @@ static constexpr uint8_t DEVICE_ID_MAX_LEN = 24;
 static constexpr uint8_t COMMAND_ID_MAX_LEN = 37;
 static constexpr uint8_t REASON_MAX_LEN = 48;
 
-enum class DeviceMode : uint8_t {
-    AUTONOMOUS = 0,
-    MANUAL = 1
-};
+enum class DeviceMode : uint8_t { AUTONOMOUS = 0, MANUAL = 1 };
 
-enum class CommandKind : uint8_t {
-    LED_CONTROL = 0,
-    CONFIG_UPDATE = 1,
-    MODE_CHANGE = 2
-};
+enum class CommandKind : uint8_t { LED_CONTROL = 0, CONFIG_UPDATE = 1, MODE_CHANGE = 2 };
 
-enum class AckResult : uint8_t {
-    APPLIED = 0,
-    REJECTED = 1,
-    DEFERRED = 2
-};
+enum class AckResult : uint8_t { APPLIED = 0, REJECTED = 1, DEFERRED = 2 };
 
 struct ThresholdConfig {
     float temp_min_c;

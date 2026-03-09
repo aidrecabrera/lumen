@@ -12,4 +12,4 @@ EnergyMessage getSnapshot();
 
 bool requestPersist();
 
-}
+}  // namespace EnergyTracker

@@ -1,9 +1,8 @@
 #include "energy_tracker.h"
 
-#include <math.h>
-
 #include <esp_log.h>
 #include <esp_timer.h>
+#include <math.h>
 
 #include "config.h"
 #include "config_manager.h"
@@ -21,21 +20,11 @@ static bool is_initialized = false;
 static constexpr float FULL_SCALE_POWER_W = 12.0f;
 static constexpr uint32_t MAX_DELTA_MS = 5000;
 
+uint64_t getNowMs() { return static_cast<uint64_t>(esp_timer_get_time() / 1000ULL); }
 
-uint64_t getNowMs()
-{
-    return static_cast<uint64_t>(esp_timer_get_time() / 1000ULL);
-}
+uint32_t toSeconds(uint64_t duration_ms) { return static_cast<uint32_t>(duration_ms / 1000ULL); }
 
-
-uint32_t toSeconds(uint64_t duration_ms)
-{
-    return static_cast<uint32_t>(duration_ms / 1000ULL);
-}
-
-
-uint32_t getActiveDistributionPct(const LedState& led)
-{
+uint32_t getActiveDistributionPct(const LedState& led) {
     uint32_t total_pct = 0;
 
     if (led.red_enabled) {
@@ -53,9 +42,7 @@ uint32_t getActiveDistributionPct(const LedState& led)
     return total_pct;
 }
 
-
-float computePowerWatts(const LedState& led)
-{
+float computePowerWatts(const LedState& led) {
     if (!led.power || led.brightness_pct == 0) {
         return 0.0f;
     }
@@ -67,9 +54,7 @@ float computePowerWatts(const LedState& led)
     return FULL_SCALE_POWER_W * brightness_ratio * channel_ratio;
 }
 
-
-uint32_t clampDeltaMs(uint64_t delta_ms)
-{
+uint32_t clampDeltaMs(uint64_t delta_ms) {
     if (delta_ms > MAX_DELTA_MS) {
         return MAX_DELTA_MS;
     }
@@ -78,10 +63,8 @@ uint32_t clampDeltaMs(uint64_t delta_ms)
 }
 }  // namespace
 
-
 namespace EnergyTracker {
-bool init()
-{
+bool init() {
     const RuntimeConfig& config = ConfigManager::getConfig();
 
     if (!isfinite(config.energy_total_wh) || config.energy_total_wh < 0.0f) {
@@ -100,9 +83,7 @@ bool init()
     return true;
 }
 
-
-void updateFromLedState(const LedState& led)
-{
+void updateFromLedState(const LedState& led) {
     if (!is_initialized) {
         return;
     }
@@ -116,8 +97,7 @@ void updateFromLedState(const LedState& led)
     last_update_ms = now_ms;
 
     float power_w = computePowerWatts(led);
-    float delta_wh = power_w *
-        (static_cast<float>(delta_ms) / 3600000.0f);
+    float delta_wh = power_w * (static_cast<float>(delta_ms) / 3600000.0f);
 
     total_wh += delta_wh;
     session_wh += delta_wh;
@@ -131,9 +111,7 @@ void updateFromLedState(const LedState& led)
     }
 }
 
-
-EnergyMessage getSnapshot()
-{
+EnergyMessage getSnapshot() {
     EnergyMessage snapshot = {};
     snapshot.timestamp_ms = getNowMs();
     snapshot.total_wh = total_wh;
@@ -143,9 +121,7 @@ EnergyMessage getSnapshot()
     return snapshot;
 }
 
-
-bool requestPersist()
-{
+bool requestPersist() {
     if (!is_initialized) {
         ESP_LOGW(TAG, "persist before init");
         return false;

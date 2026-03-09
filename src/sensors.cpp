@@ -1,12 +1,11 @@
 #include "sensors.h"
 
-#include <math.h>
-
 #include <BH1750.h>
 #include <DHT.h>
 #include <Wire.h>
 #include <esp_log.h>
 #include <esp_timer.h>
+#include <math.h>
 
 #include "config.h"
 
@@ -20,15 +19,9 @@ static bool is_initialized = false;
 static bool is_healthy = false;
 static uint32_t sample_sequence = 0;
 
+uint64_t getNowMs() { return static_cast<uint64_t>(esp_timer_get_time() / 1000ULL); }
 
-uint64_t getNowMs()
-{
-    return static_cast<uint64_t>(esp_timer_get_time() / 1000ULL);
-}
-
-
-bool readClimateOnce(float& temperature_c, float& humidity_pct)
-{
+bool readClimateOnce(float& temperature_c, float& humidity_pct) {
     temperature_c = climate_sensor.readTemperature();
     humidity_pct = climate_sensor.readHumidity();
 
@@ -39,9 +32,7 @@ bool readClimateOnce(float& temperature_c, float& humidity_pct)
     return true;
 }
 
-
-bool readClimate(float& temperature_c, float& humidity_pct)
-{
+bool readClimate(float& temperature_c, float& humidity_pct) {
     bool was_read = readClimateOnce(temperature_c, humidity_pct);
     if (was_read) {
         return true;
@@ -50,9 +41,7 @@ bool readClimate(float& temperature_c, float& humidity_pct)
     return readClimateOnce(temperature_c, humidity_pct);
 }
 
-
-bool readLight(float& light_lux)
-{
+bool readLight(float& light_lux) {
     light_lux = light_sensor.readLightLevel();
 
     if (isnan(light_lux)) {
@@ -66,9 +55,7 @@ bool readLight(float& light_lux)
     return true;
 }
 
-
-void setHealth(bool next_health)
-{
+void setHealth(bool next_health) {
     if (is_healthy == next_health) {
         return;
     }
@@ -83,9 +70,7 @@ void setHealth(bool next_health)
     ESP_LOGW(TAG, "sensor health lost");
 }
 
-
-bool fillReading(SensorReading& out)
-{
+bool fillReading(SensorReading& out) {
     float light_lux = 0.0f;
     float temperature_c = 0.0f;
     float humidity_pct = 0.0f;
@@ -106,15 +91,12 @@ bool fillReading(SensorReading& out)
 }
 }  // namespace
 
-
 namespace Sensors {
-bool init()
-{
+bool init() {
     Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
     climate_sensor.begin();
 
-    bool has_light_sensor = light_sensor.begin(
-        BH1750::CONTINUOUS_HIGH_RES_MODE);
+    bool has_light_sensor = light_sensor.begin(BH1750::CONTINUOUS_HIGH_RES_MODE);
 
     if (!has_light_sensor) {
         ESP_LOGE(TAG, "bh1750 init failed");
@@ -129,9 +111,7 @@ bool init()
     return true;
 }
 
-
-bool readCurrent(SensorReading& out)
-{
+bool readCurrent(SensorReading& out) {
     if (!is_initialized) {
         ESP_LOGW(TAG, "read before init");
         setHealth(false);
@@ -148,9 +128,5 @@ bool readCurrent(SensorReading& out)
     return true;
 }
 
-
-bool isHealthy()
-{
-    return is_healthy;
-}
+bool isHealthy() { return is_healthy; }
 }  // namespace Sensors

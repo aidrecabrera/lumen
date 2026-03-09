@@ -1,10 +1,10 @@
 #pragma once
 
-#include "types.h"
-
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <freertos/task.h>
+
+#include "types.h"
 
 extern QueueHandle_t sensor_to_mqtt_queue;
 
@@ -24,4 +24,4 @@ bool createQueues();
 
 bool createTasks();
 
-}
+}  // namespace TaskManager

@@ -2,11 +2,7 @@
 
 #include "types.h"
 
-typedef void (*MqttInboundCallback)(
-    const char* topic,
-    const uint8_t* payload,
-    uint16_t length
-);
+typedef void (*MqttInboundCallback)(const char* topic, const uint8_t* payload, uint16_t length);
 
 namespace MqttClient {
 
@@ -28,4 +24,4 @@ void registerInboundCallback(MqttInboundCallback callback);
 
 bool isConnected();
 
-}
+}  // namespace MqttClient

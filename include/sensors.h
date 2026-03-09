@@ -10,4 +10,4 @@ bool readCurrent(SensorReading& out);
 
 bool isHealthy();
 
-}
+}  // namespace Sensors

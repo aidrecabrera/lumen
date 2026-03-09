@@ -18,9 +18,7 @@ namespace {
 static const char* TAG = "main";
 static uint8_t boot_failure_count = 0;
 
-
-bool initWatchdog()
-{
+bool initWatchdog() {
 #if ESP_IDF_VERSION_MAJOR >= 5
     esp_task_wdt_config_t watchdog_config = {};
     watchdog_config.timeout_ms = WATCHDOG_TIMEOUT_MS;
@@ -33,9 +31,7 @@ bool initWatchdog()
         return false;
     }
 #else
-    esp_err_t init_result = esp_task_wdt_init(
-        WATCHDOG_TIMEOUT_MS / 1000,
-        true);
+    esp_err_t init_result = esp_task_wdt_init(WATCHDOG_TIMEOUT_MS / 1000, true);
     if (init_result != ESP_OK) {
         ESP_LOGE(TAG, "watchdog init failed");
         return false;
@@ -51,22 +47,15 @@ bool initWatchdog()
     return true;
 }
 
-
-void restartNow()
-{
+void restartNow() {
     delay(100);
     ESP.restart();
 }
 
-
-void failBoot(const char* reason)
-{
+void failBoot(const char* reason) {
     ++boot_failure_count;
 
-    ESP_LOGE(TAG, "boot failed: %s (%u/%u)",
-        reason,
-        boot_failure_count,
-        REBOOT_THRESHOLD);
+    ESP_LOGE(TAG, "boot failed: %s (%u/%u)", reason, boot_failure_count, REBOOT_THRESHOLD);
 
     if (boot_failure_count >= REBOOT_THRESHOLD) {
         ESP_LOGE(TAG, "reboot threshold reached");
@@ -76,9 +65,7 @@ void failBoot(const char* reason)
 }
 }  // namespace
 
-
-void setup()
-{
+void setup() {
     Serial.begin(115200);
     delay(100);
 
@@ -139,9 +126,7 @@ void setup()
     ESP_LOGI(TAG, "boot complete for %s", config.device_id);
 }
 
-
-void loop()
-{
+void loop() {
     esp_task_wdt_reset();
     delay(1000);
 }

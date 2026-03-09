@@ -1,9 +1,8 @@
 #include "task_manager.h"
 
-#include <string.h>
-
 #include <esp_log.h>
 #include <esp_timer.h>
+#include <string.h>
 
 #include "command_handler.h"
 #include "config.h"
@@ -27,15 +26,9 @@ static TaskHandle_t sensors_task_handle = nullptr;
 static TaskHandle_t led_task_handle = nullptr;
 static TaskHandle_t mqtt_task_handle = nullptr;
 
+uint64_t getNowMs() { return static_cast<uint64_t>(esp_timer_get_time() / 1000ULL); }
 
-uint64_t getNowMs()
-{
-    return static_cast<uint64_t>(esp_timer_get_time() / 1000ULL);
-}
-
-
-void clearQueues()
-{
+void clearQueues() {
     if (sensor_to_mqtt_queue != nullptr) {
         vQueueDelete(sensor_to_mqtt_queue);
         sensor_to_mqtt_queue = nullptr;
@@ -67,12 +60,9 @@ void clearQueues()
     }
 }
 
-
 bool sendSensorReading(
-    QueueHandle_t queue_handle,
-    const SensorReading& reading,
-    const char* queue_name)
-{
+    QueueHandle_t queue_handle, const SensorReading& reading, const char* queue_name
+) {
     BaseType_t send_result = xQueueSend(queue_handle, &reading, 0);
     if (send_result == pdTRUE) {
         return true;
@@ -82,11 +72,8 @@ bool sendSensorReading(
     return false;
 }
 
-
-bool sendStatusMessage(const StatusMessage& status)
-{
-    BaseType_t send_result = xQueueSend(
-        status_to_mqtt_queue, &status, 0);
+bool sendStatusMessage(const StatusMessage& status) {
+    BaseType_t send_result = xQueueSend(status_to_mqtt_queue, &status, 0);
     if (send_result == pdTRUE) {
         return true;
     }
@@ -95,11 +82,8 @@ bool sendStatusMessage(const StatusMessage& status)
     return false;
 }
 
-
-bool sendAckMessage(const AckMessage& ack)
-{
-    BaseType_t send_result = xQueueSend(
-        ack_to_mqtt_queue, &ack, 0);
+bool sendAckMessage(const AckMessage& ack) {
+    BaseType_t send_result = xQueueSend(ack_to_mqtt_queue, &ack, 0);
     if (send_result == pdTRUE) {
         return true;
     }
@@ -108,11 +92,8 @@ bool sendAckMessage(const AckMessage& ack)
     return false;
 }
 
-
-bool sendEnergyMessage(const EnergyMessage& energy)
-{
-    BaseType_t send_result = xQueueSend(
-        energy_to_mqtt_queue, &energy, 0);
+bool sendEnergyMessage(const EnergyMessage& energy) {
+    BaseType_t send_result = xQueueSend(energy_to_mqtt_queue, &energy, 0);
     if (send_result == pdTRUE) {
         return true;
     }
@@ -121,17 +102,11 @@ bool sendEnergyMessage(const EnergyMessage& energy)
     return false;
 }
 
-
-bool areLedStatesEqual(const LedState& left, const LedState& right)
-{
+bool areLedStatesEqual(const LedState& left, const LedState& right) {
     return memcmp(&left, &right, sizeof(LedState)) == 0;
 }
 
-
-void drainLatestSensor(
-    SensorReading& latest_reading,
-    bool& has_reading)
-{
+void drainLatestSensor(SensorReading& latest_reading, bool& has_reading) {
     SensorReading pending = {};
 
     while (xQueueReceive(sensor_to_led_queue, &pending, 0) == pdTRUE) {
@@ -140,9 +115,7 @@ void drainLatestSensor(
     }
 }
 
-
-void drainStatusQueue()
-{
+void drainStatusQueue() {
     StatusMessage status = {};
 
     while (xQueueReceive(status_to_mqtt_queue, &status, 0) == pdTRUE) {
@@ -154,9 +127,7 @@ void drainStatusQueue()
     }
 }
 
-
-void drainEnergyQueue()
-{
+void drainEnergyQueue() {
     EnergyMessage energy = {};
 
     while (xQueueReceive(energy_to_mqtt_queue, &energy, 0) == pdTRUE) {
@@ -168,9 +139,7 @@ void drainEnergyQueue()
     }
 }
 
-
-void drainAckQueue()
-{
+void drainAckQueue() {
     AckMessage ack = {};
 
     while (xQueueReceive(ack_to_mqtt_queue, &ack, 0) == pdTRUE) {
@@ -182,32 +151,22 @@ void drainAckQueue()
     }
 }
 
-
 // Intentional deviation: wraps bool-returning handleInbound
 // to match the void callback signature expected by PubSubClient.
-void inboundCommandBridge(
-    const char* topic,
-    const uint8_t* payload,
-    uint16_t length)
-{
-    bool was_handled = CommandHandler::handleInbound(
-        topic, payload, length);
+void inboundCommandBridge(const char* topic, const uint8_t* payload, uint16_t length) {
+    bool was_handled = CommandHandler::handleInbound(topic, payload, length);
     if (!was_handled) {
         ESP_LOGW(TAG, "inbound command not handled");
     }
 }
 
-
-void taskSensors(void* parameter)
-{
+void taskSensors(void* parameter) {
     (void)parameter;
 
     TickType_t last_wake_ticks = xTaskGetTickCount();
 
     while (true) {
-        vTaskDelayUntil(
-            &last_wake_ticks,
-            pdMS_TO_TICKS(SENSOR_INTERVAL_MS));
+        vTaskDelayUntil(&last_wake_ticks, pdMS_TO_TICKS(SENSOR_INTERVAL_MS));
 
         SensorReading reading = {};
         bool was_read = Sensors::readCurrent(reading);
@@ -215,14 +174,8 @@ void taskSensors(void* parameter)
             continue;
         }
 
-        bool sent_mqtt = sendSensorReading(
-            sensor_to_mqtt_queue,
-            reading,
-            "sensor_to_mqtt");
-        bool sent_led = sendSensorReading(
-            sensor_to_led_queue,
-            reading,
-            "sensor_to_led");
+        bool sent_mqtt = sendSensorReading(sensor_to_mqtt_queue, reading, "sensor_to_mqtt");
+        bool sent_led = sendSensorReading(sensor_to_led_queue, reading, "sensor_to_led");
 
         if (!sent_mqtt || !sent_led) {
             continue;
@@ -230,9 +183,7 @@ void taskSensors(void* parameter)
     }
 }
 
-
-void taskLed(void* parameter)
-{
+void taskLed(void* parameter) {
     (void)parameter;
 
     SensorReading latest_reading = {};
@@ -242,10 +193,8 @@ void taskLed(void* parameter)
 
     while (true) {
         CommandEnvelope command = {};
-        BaseType_t receive_result = xQueueReceive(
-            command_dispatch_queue,
-            &command,
-            pdMS_TO_TICKS(LED_CONTROL_INTERVAL_MS));
+        BaseType_t receive_result =
+            xQueueReceive(command_dispatch_queue, &command, pdMS_TO_TICKS(LED_CONTROL_INTERVAL_MS));
 
         drainLatestSensor(latest_reading, has_sensor_reading);
 
@@ -256,8 +205,7 @@ void taskLed(void* parameter)
                 ESP_LOGW(TAG, "ack enqueue failed");
             }
 
-            StatusMessage status = LedControl::buildStatusMessage(
-                WifiManager::getDegradedTier());
+            StatusMessage status = LedControl::buildStatusMessage(WifiManager::getDegradedTier());
             bool sent_status = sendStatusMessage(status);
             if (!sent_status) {
                 ESP_LOGW(TAG, "status enqueue failed");
@@ -270,8 +218,8 @@ void taskLed(void* parameter)
 
             LedState current_led = LedControl::getCurrentLedState();
             if (!areLedStatesEqual(previous_led, current_led)) {
-                StatusMessage status = LedControl::buildStatusMessage(
-                    WifiManager::getDegradedTier());
+                StatusMessage status =
+                    LedControl::buildStatusMessage(WifiManager::getDegradedTier());
                 bool sent_status = sendStatusMessage(status);
                 if (!sent_status) {
                     ESP_LOGW(TAG, "status enqueue failed");
@@ -283,8 +231,7 @@ void taskLed(void* parameter)
         EnergyTracker::updateFromLedState(applied_led);
 
         uint64_t now_ms = getNowMs();
-        if (now_ms - last_energy_publish_ms >=
-            ENERGY_PUBLISH_INTERVAL_MS) {
+        if (now_ms - last_energy_publish_ms >= ENERGY_PUBLISH_INTERVAL_MS) {
             EnergyMessage energy = EnergyTracker::getSnapshot();
             bool sent_energy = sendEnergyMessage(energy);
             if (!sent_energy) {
@@ -294,8 +241,7 @@ void taskLed(void* parameter)
             last_energy_publish_ms = now_ms;
         }
 
-        if (now_ms - last_energy_persist_ms >=
-            ENERGY_PERSIST_INTERVAL_MS) {
+        if (now_ms - last_energy_persist_ms >= ENERGY_PERSIST_INTERVAL_MS) {
             bool was_persisted = EnergyTracker::requestPersist();
             if (!was_persisted) {
                 ESP_LOGW(TAG, "energy persist failed");
@@ -306,9 +252,7 @@ void taskLed(void* parameter)
     }
 }
 
-
-void taskMqtt(void* parameter)
-{
+void taskMqtt(void* parameter) {
     (void)parameter;
 
     MqttClient::registerInboundCallback(inboundCommandBridge);
@@ -316,10 +260,8 @@ void taskMqtt(void* parameter)
 
     while (true) {
         SensorReading reading = {};
-        BaseType_t receive_result = xQueueReceive(
-            sensor_to_mqtt_queue,
-            &reading,
-            pdMS_TO_TICKS(100));
+        BaseType_t receive_result =
+            xQueueReceive(sensor_to_mqtt_queue, &reading, pdMS_TO_TICKS(100));
 
         bool wifi_ready = WifiManager::connectOrPoll();
         bool mqtt_ready = MqttClient::connectOrPoll();
@@ -340,13 +282,11 @@ void taskMqtt(void* parameter)
         drainAckQueue();
 
         uint64_t now_ms = getNowMs();
-        if (now_ms - last_heartbeat_ms <
-            MQTT_HEARTBEAT_INTERVAL_MS) {
+        if (now_ms - last_heartbeat_ms < MQTT_HEARTBEAT_INTERVAL_MS) {
             continue;
         }
 
-        StatusMessage heartbeat = LedControl::buildStatusMessage(
-            WifiManager::getDegradedTier());
+        StatusMessage heartbeat = LedControl::buildStatusMessage(WifiManager::getDegradedTier());
         bool was_published = MqttClient::publishStatus(heartbeat);
         if (!was_published) {
             ESP_LOGW(TAG, "heartbeat publish failed");
@@ -357,37 +297,20 @@ void taskMqtt(void* parameter)
 }
 }  // namespace
 
-
 namespace TaskManager {
-bool createQueues()
-{
+bool createQueues() {
     clearQueues();
 
-    sensor_to_mqtt_queue = xQueueCreate(
-        QUEUE_SENSOR_TO_MQTT_LENGTH,
-        sizeof(SensorReading));
-    sensor_to_led_queue = xQueueCreate(
-        QUEUE_SENSOR_TO_LED_LENGTH,
-        sizeof(SensorReading));
-    command_dispatch_queue = xQueueCreate(
-        QUEUE_COMMAND_LENGTH,
-        sizeof(CommandEnvelope));
-    status_to_mqtt_queue = xQueueCreate(
-        QUEUE_STATUS_LENGTH,
-        sizeof(StatusMessage));
-    energy_to_mqtt_queue = xQueueCreate(
-        QUEUE_ENERGY_LENGTH,
-        sizeof(EnergyMessage));
-    ack_to_mqtt_queue = xQueueCreate(
-        QUEUE_ACK_LENGTH,
-        sizeof(AckMessage));
+    sensor_to_mqtt_queue = xQueueCreate(QUEUE_SENSOR_TO_MQTT_LENGTH, sizeof(SensorReading));
+    sensor_to_led_queue = xQueueCreate(QUEUE_SENSOR_TO_LED_LENGTH, sizeof(SensorReading));
+    command_dispatch_queue = xQueueCreate(QUEUE_COMMAND_LENGTH, sizeof(CommandEnvelope));
+    status_to_mqtt_queue = xQueueCreate(QUEUE_STATUS_LENGTH, sizeof(StatusMessage));
+    energy_to_mqtt_queue = xQueueCreate(QUEUE_ENERGY_LENGTH, sizeof(EnergyMessage));
+    ack_to_mqtt_queue = xQueueCreate(QUEUE_ACK_LENGTH, sizeof(AckMessage));
 
-    if (sensor_to_mqtt_queue == nullptr ||
-        sensor_to_led_queue == nullptr ||
-        command_dispatch_queue == nullptr ||
-        status_to_mqtt_queue == nullptr ||
-        energy_to_mqtt_queue == nullptr ||
-        ack_to_mqtt_queue == nullptr) {
+    if (sensor_to_mqtt_queue == nullptr || sensor_to_led_queue == nullptr ||
+        command_dispatch_queue == nullptr || status_to_mqtt_queue == nullptr ||
+        energy_to_mqtt_queue == nullptr || ack_to_mqtt_queue == nullptr) {
         ESP_LOGE(TAG, "queue create failed");
         clearQueues();
         return false;
@@ -397,9 +320,7 @@ bool createQueues()
     return true;
 }
 
-
-bool createTasks()
-{
+bool createTasks() {
     sensors_task_handle = nullptr;
     led_task_handle = nullptr;
     mqtt_task_handle = nullptr;
@@ -411,7 +332,8 @@ bool createTasks()
         nullptr,
         TASK_SENSORS_PRIORITY,
         &sensors_task_handle,
-        TASK_SENSORS_CORE);
+        TASK_SENSORS_CORE
+    );
 
     if (sensor_result != pdPASS) {
         ESP_LOGE(TAG, "TaskSensors create failed");
@@ -426,7 +348,8 @@ bool createTasks()
         nullptr,
         TASK_LED_PRIORITY,
         &led_task_handle,
-        TASK_LED_CORE);
+        TASK_LED_CORE
+    );
 
     if (led_result != pdPASS) {
         ESP_LOGE(TAG, "TaskLED create failed");
@@ -440,7 +363,8 @@ bool createTasks()
         nullptr,
         TASK_MQTT_PRIORITY,
         &mqtt_task_handle,
-        TASK_MQTT_CORE);
+        TASK_MQTT_CORE
+    );
 
     if (mqtt_result != pdPASS) {
         ESP_LOGE(TAG, "TaskMQTT create failed");

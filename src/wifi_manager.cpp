@@ -1,11 +1,10 @@
 #include "wifi_manager.h"
 
-#include <stdio.h>
-
 #include <WiFi.h>
 #include <esp_log.h>
 #include <esp_mac.h>
 #include <esp_timer.h>
+#include <stdio.h>
 
 #include "config.h"
 #include "secrets.h"
@@ -20,15 +19,9 @@ static uint8_t failure_count = 0;
 static uint32_t backoff_ms = WIFI_BACKOFF_BASE_MS;
 static uint64_t next_attempt_ms = 0;
 
+uint64_t getNowMs() { return static_cast<uint64_t>(esp_timer_get_time() / 1000ULL); }
 
-uint64_t getNowMs()
-{
-    return static_cast<uint64_t>(esp_timer_get_time() / 1000ULL);
-}
-
-
-uint32_t nextBackoffMs(uint32_t current_backoff_ms)
-{
+uint32_t nextBackoffMs(uint32_t current_backoff_ms) {
     if (current_backoff_ms >= WIFI_BACKOFF_MAX_MS) {
         return WIFI_BACKOFF_MAX_MS;
     }
@@ -41,18 +34,14 @@ uint32_t nextBackoffMs(uint32_t current_backoff_ms)
     return doubled_backoff_ms;
 }
 
-
-void resetState()
-{
+void resetState() {
     degraded_tier = 0;
     failure_count = 0;
     backoff_ms = WIFI_BACKOFF_BASE_MS;
     next_attempt_ms = 0;
 }
 
-
-bool buildHostname(char* hostname, size_t hostname_len)
-{
+bool buildHostname(char* hostname, size_t hostname_len) {
     uint8_t base_mac[6] = {};
     esp_err_t read_result = esp_read_mac(base_mac, ESP_MAC_WIFI_STA);
 
@@ -67,7 +56,8 @@ bool buildHostname(char* hostname, size_t hostname_len)
         WIFI_HOSTNAME_PREFIX,
         base_mac[3],
         base_mac[4],
-        base_mac[5]);
+        base_mac[5]
+    );
 
     if (written <= 0 || static_cast<size_t>(written) >= hostname_len) {
         return false;
@@ -76,15 +66,9 @@ bool buildHostname(char* hostname, size_t hostname_len)
     return true;
 }
 
+void beginConnection() { WiFi.begin(WIFI_SSID, WIFI_PASSWORD); }
 
-void beginConnection()
-{
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-}
-
-
-void recordReconnectFailure()
-{
+void recordReconnectFailure() {
     if (failure_count < 255) {
         ++failure_count;
     }
@@ -97,9 +81,7 @@ void recordReconnectFailure()
     degraded_tier = 1;
 }
 
-
-void logConnectionChange(bool is_connected)
-{
+void logConnectionChange(bool is_connected) {
     if (is_connected == was_connected) {
         return;
     }
@@ -115,10 +97,8 @@ void logConnectionChange(bool is_connected)
 }
 }  // namespace
 
-
 namespace WifiManager {
-bool init()
-{
+bool init() {
     char hostname[32] = {};
 
     bool mode_ok = WiFi.mode(WIFI_STA);
@@ -146,9 +126,7 @@ bool init()
     return true;
 }
 
-
-bool connectOrPoll()
-{
+bool connectOrPoll() {
     if (!is_initialized) {
         ESP_LOGW(TAG, "poll before init");
         return false;
@@ -178,9 +156,7 @@ bool connectOrPoll()
     return false;
 }
 
-
-bool isConnected()
-{
+bool isConnected() {
     if (!is_initialized) {
         return false;
     }
@@ -188,15 +164,7 @@ bool isConnected()
     return WiFi.status() == WL_CONNECTED;
 }
 
+uint8_t getDegradedTier() { return degraded_tier; }
 
-uint8_t getDegradedTier()
-{
-    return degraded_tier;
-}
-
-
-void resetReconnect()
-{
-    resetState();
-}
+void resetReconnect() { resetState(); }
 }  // namespace WifiManager
