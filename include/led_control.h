@@ -10,7 +10,7 @@ AckMessage applyCommand(const CommandEnvelope& command);
 
 void controlTick(const SensorReading& latest_reading);
 
-const LedState& getCurrentLedState();
+LedState getCurrentLedState();
 
 DeviceMode getCurrentMode();
 

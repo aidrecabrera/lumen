@@ -18,4 +18,6 @@ bool saveLedState(const LedState& led);
 
 bool saveEnergyTotal(float total_wh);
 
+bool saveRuntimeConfig(const RuntimeConfig& config);
+
 }  // namespace ConfigManager
