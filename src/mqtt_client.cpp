@@ -431,7 +431,7 @@ void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
     memcpy(msg.payload, payload, msg.length);
 
     if (xQueueSend(inbound_queue, &msg, 0) != pdTRUE) {
-        ESP_LOGW(TAG, "inbound queue full");
+        ESP_LOGW(TAG, "inbound queue full, dropped message on topic %s length %u", msg.topic, msg.length);
     }
 }
 }  // namespace
@@ -639,7 +639,7 @@ bool isConnected() {
         return false;
     }
 
-    LockGuard lock(mqtt_mutex, 0);
+    LockGuard lock(mqtt_mutex, pdMS_TO_TICKS(10));
     if (!lock.locked()) {
         return false;
     }
