@@ -1,11 +1,12 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
-static constexpr uint8_t DEVICE_ID_MAX_LEN = 24;
-static constexpr uint8_t COMMAND_ID_MAX_LEN = 37;
-static constexpr uint8_t REASON_MAX_LEN = 48;
+static constexpr size_t DEVICE_ID_MAX_LEN = 24U;
+static constexpr size_t COMMAND_ID_MAX_LEN = 37U;
+static constexpr size_t REASON_MAX_LEN = 48U;
 
 enum class DeviceMode : uint8_t { AUTONOMOUS = 0, MANUAL = 1 };
 
