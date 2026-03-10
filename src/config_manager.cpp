@@ -1,34 +1,29 @@
 #include "config_manager.h"
 
 #include <Preferences.h>
+#include <esp_err.h>
 #include <esp_log.h>
 #include <esp_mac.h>
-#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
-#include "config.h"
-#include "types.h"
+#include "utils.h"
+#include "validation.h"
 
 namespace {
 static const char* TAG = "config_manager";
 static const char* NVS_NAMESPACE = "spot";
 
-static const char* KEY_DEVICE_ID = "device_id";
-static const char* KEY_DEVICE_MODE = "device_mode";
-static const char* KEY_TEMP_MIN_C = "temp_min_c";
-static const char* KEY_TEMP_MAX_C = "temp_max_c";
-static const char* KEY_HUMIDITY_MIN_PCT = "humidity_min_pct";
-static const char* KEY_HUMIDITY_MAX_PCT = "humidity_max_pct";
-static const char* KEY_LED_POWER = "led_power";
-static const char* KEY_LED_BRIGHTNESS_PCT = "led_brightness_pct";
-static const char* KEY_LED_RED_ENABLED = "led_red_enabled";
-static const char* KEY_LED_BLUE_ENABLED = "led_blue_enabled";
-static const char* KEY_LED_FAR_RED_ENABLED = "led_far_red_enabled";
-static const char* KEY_LED_RED_PCT = "led_red_pct";
-static const char* KEY_LED_BLUE_PCT = "led_blue_pct";
-static const char* KEY_LED_FAR_RED_PCT = "led_far_red_pct";
-static const char* KEY_ENERGY_TOTAL_WH = "energy_total_wh";
+static const char* KEY_RUNTIME_CFG = "runtime_cfg";
+static const char* KEY_ENERGY_WH = "energy_wh";
+
+struct PersistedRuntimeConfig {
+    char device_id[DEVICE_ID_MAX_LEN];
+    uint8_t mode;
+    uint8_t reserved[3];
+    ThresholdConfig thresholds;
+    LedState led;
+};
 
 static Preferences preferences;
 static RuntimeConfig runtime_config = {};
@@ -47,85 +42,26 @@ ThresholdConfig buildDefaultThresholds() {
 LedState buildDefaultLedState() {
     LedState led = {};
     led.power = true;
-    led.brightness_pct = 50;
+    led.brightness_pct = 50U;
     led.red_enabled = true;
     led.blue_enabled = true;
     led.far_red_enabled = true;
-    led.red_dist_pct = 40;
-    led.blue_dist_pct = 35;
-    led.far_red_dist_pct = 25;
+    led.red_dist_pct = 40U;
+    led.blue_dist_pct = 35U;
+    led.far_red_dist_pct = 25U;
     return led;
-}
-
-bool isThresholdConfigValid(const ThresholdConfig& thresholds) {
-    if (!isfinite(thresholds.temp_min_c) || !isfinite(thresholds.temp_max_c) ||
-        !isfinite(thresholds.humidity_min_pct) || !isfinite(thresholds.humidity_max_pct)) {
-        return false;
-    }
-
-    if (thresholds.temp_min_c > thresholds.temp_max_c) {
-        return false;
-    }
-
-    if (thresholds.humidity_min_pct > thresholds.humidity_max_pct) {
-        return false;
-    }
-
-    return true;
-}
-
-bool isLedStateValid(const LedState& led) {
-    uint16_t total_pct = static_cast<uint16_t>(led.red_dist_pct) +
-                         static_cast<uint16_t>(led.blue_dist_pct) +
-                         static_cast<uint16_t>(led.far_red_dist_pct);
-
-    if (led.brightness_pct > 100) {
-        return false;
-    }
-
-    if (total_pct != 100) {
-        return false;
-    }
-
-    return true;
-}
-
-bool isEnergyTotalValid(float total_wh) {
-    if (!isfinite(total_wh)) {
-        return false;
-    }
-
-    if (total_wh < 0.0f) {
-        return false;
-    }
-
-    return true;
-}
-
-void copyText(char* dest, size_t dest_len, const char* src) {
-    if (dest == nullptr || dest_len == 0) {
-        return;
-    }
-
-    if (src == nullptr) {
-        dest[0] = '\0';
-        return;
-    }
-
-    strncpy(dest, src, dest_len - 1);
-    dest[dest_len - 1] = '\0';
 }
 
 bool generateDeviceId(char* out_device_id, size_t out_len) {
     uint8_t base_mac[6] = {};
-    esp_err_t read_result = esp_read_mac(base_mac, ESP_MAC_WIFI_STA);
+    const esp_err_t read_result = esp_read_mac(base_mac, ESP_MAC_WIFI_STA);
 
     if (read_result != ESP_OK) {
-        ESP_LOGE(TAG, "mac read failed");
+        ESP_LOGE(TAG, "mac read failed: %s", esp_err_to_name(read_result));
         return false;
     }
 
-    int written = snprintf(
+    const int written = snprintf(
         out_device_id,
         out_len,
         "spot-%02x%02x%02x%02x%02x%02x",
@@ -152,20 +88,12 @@ void applyDefaultConfig(RuntimeConfig& config) {
     config.led = buildDefaultLedState();
     config.energy_total_wh = 0.0f;
 
-    bool was_generated = generateDeviceId(config.device_id, sizeof(config.device_id));
-
-    if (was_generated) {
-        return;
+    if (!generateDeviceId(config.device_id, sizeof(config.device_id))) {
+        copyText(config.device_id, sizeof(config.device_id), "spot-unknown");
     }
-
-    copyText(config.device_id, sizeof(config.device_id), "spot-unknown");
 }
 
 DeviceMode sanitizeMode(uint8_t raw_mode) {
-    if (raw_mode == static_cast<uint8_t>(DeviceMode::AUTONOMOUS)) {
-        return DeviceMode::AUTONOMOUS;
-    }
-
     if (raw_mode == static_cast<uint8_t>(DeviceMode::MANUAL)) {
         return DeviceMode::MANUAL;
     }
@@ -173,133 +101,103 @@ DeviceMode sanitizeMode(uint8_t raw_mode) {
     return DeviceMode::AUTONOMOUS;
 }
 
-void loadThresholdsFromNvs(RuntimeConfig& config) {
-    ThresholdConfig stored = {};
-    stored.temp_min_c = preferences.getFloat(KEY_TEMP_MIN_C, config.thresholds.temp_min_c);
-    stored.temp_max_c = preferences.getFloat(KEY_TEMP_MAX_C, config.thresholds.temp_max_c);
-    stored.humidity_min_pct =
-        preferences.getFloat(KEY_HUMIDITY_MIN_PCT, config.thresholds.humidity_min_pct);
-    stored.humidity_max_pct =
-        preferences.getFloat(KEY_HUMIDITY_MAX_PCT, config.thresholds.humidity_max_pct);
-
-    if (isThresholdConfigValid(stored)) {
-        config.thresholds = stored;
-        return;
-    }
-
-    ESP_LOGW(TAG, "invalid thresholds in nvs");
+bool hasTextInBuffer(const char* text, size_t max_len) {
+    return (text != nullptr) && (strnlen(text, max_len) < max_len) && (text[0] != '\0');
 }
 
-void loadLedStateFromNvs(RuntimeConfig& config) {
-    LedState stored = config.led;
-    stored.power = preferences.getBool(KEY_LED_POWER, config.led.power);
-    stored.brightness_pct = preferences.getUChar(KEY_LED_BRIGHTNESS_PCT, config.led.brightness_pct);
-    stored.red_enabled = preferences.getBool(KEY_LED_RED_ENABLED, config.led.red_enabled);
-    stored.blue_enabled = preferences.getBool(KEY_LED_BLUE_ENABLED, config.led.blue_enabled);
-    stored.far_red_enabled =
-        preferences.getBool(KEY_LED_FAR_RED_ENABLED, config.led.far_red_enabled);
-    stored.red_dist_pct = preferences.getUChar(KEY_LED_RED_PCT, config.led.red_dist_pct);
-    stored.blue_dist_pct = preferences.getUChar(KEY_LED_BLUE_PCT, config.led.blue_dist_pct);
-    stored.far_red_dist_pct =
-        preferences.getUChar(KEY_LED_FAR_RED_PCT, config.led.far_red_dist_pct);
-
-    if (isLedStateValid(stored)) {
-        config.led = stored;
-        return;
-    }
-
-    ESP_LOGW(TAG, "invalid led state in nvs");
-}
-
-void loadDeviceIdFromNvs(RuntimeConfig& config) {
-    char stored_device_id[DEVICE_ID_MAX_LEN] = {};
-    size_t read_len =
-        preferences.getString(KEY_DEVICE_ID, stored_device_id, sizeof(stored_device_id));
-
-    if (read_len == 0 || stored_device_id[0] == '\0') {
-        return;
-    }
-
-    copyText(config.device_id, sizeof(config.device_id), stored_device_id);
-}
-
-void loadRuntimeConfigFromNvs(RuntimeConfig& config) {
-    loadDeviceIdFromNvs(config);
-    config.mode =
-        sanitizeMode(preferences.getUChar(KEY_DEVICE_MODE, static_cast<uint8_t>(config.mode)));
-
-    loadThresholdsFromNvs(config);
-    loadLedStateFromNvs(config);
-
-    float stored_energy_total_wh =
-        preferences.getFloat(KEY_ENERGY_TOTAL_WH, config.energy_total_wh);
-
-    if (isEnergyTotalValid(stored_energy_total_wh)) {
-        config.energy_total_wh = stored_energy_total_wh;
-        return;
-    }
-
-    ESP_LOGW(TAG, "invalid energy total in nvs");
-}
-
-bool putStringKey(const char* key, const char* value) {
+bool writeRuntimeConfigBlob(const RuntimeConfig& config) {
     if (!has_nvs) {
-        ESP_LOGW(TAG, "nvs unavailable for %s", key);
+        ESP_LOGW(TAG, "nvs unavailable");
         return false;
     }
 
-    size_t written_len = preferences.putString(key, value);
-    if (written_len == 0) {
-        ESP_LOGE(TAG, "put string failed %s", key);
+    if (!hasTextInBuffer(config.device_id, sizeof(config.device_id))) {
+        ESP_LOGW(TAG, "runtime config save rejected: bad device id");
+        return false;
+    }
+
+    if (!isThresholdConfigValid(config.thresholds) || !isLedStateValid(config.led)) {
+        ESP_LOGW(TAG, "runtime config save rejected: invalid payload");
+        return false;
+    }
+
+    PersistedRuntimeConfig persisted = {};
+    copyText(persisted.device_id, sizeof(persisted.device_id), config.device_id);
+    persisted.mode = static_cast<uint8_t>(config.mode);
+    persisted.thresholds = config.thresholds;
+    persisted.led = config.led;
+
+    const size_t written =
+        preferences.putBytes(KEY_RUNTIME_CFG, &persisted, sizeof(persisted));
+
+    if (written != sizeof(persisted)) {
+        ESP_LOGE(TAG, "runtime config blob write failed");
         return false;
     }
 
     return true;
 }
 
-bool putBoolKey(const char* key, bool value) {
+bool writeEnergyTotal(float total_wh) {
     if (!has_nvs) {
-        ESP_LOGW(TAG, "nvs unavailable for %s", key);
+        ESP_LOGW(TAG, "nvs unavailable");
         return false;
     }
 
-    size_t written_len = preferences.putBool(key, value);
-    if (written_len == 0) {
-        ESP_LOGE(TAG, "put bool failed %s", key);
+    if (!isEnergyTotalValid(total_wh)) {
+        ESP_LOGW(TAG, "energy save rejected");
+        return false;
+    }
+
+    const size_t written = preferences.putFloat(KEY_ENERGY_WH, total_wh);
+    if (written == 0U) {
+        ESP_LOGE(TAG, "energy write failed");
         return false;
     }
 
     return true;
 }
 
-bool putUCharKey(const char* key, uint8_t value) {
-    if (!has_nvs) {
-        ESP_LOGW(TAG, "nvs unavailable for %s", key);
+bool loadRuntimeConfigBlob(RuntimeConfig& config) {
+    PersistedRuntimeConfig persisted = {};
+    const size_t read_len =
+        preferences.getBytes(KEY_RUNTIME_CFG, &persisted, sizeof(persisted));
+
+    if (read_len != sizeof(persisted)) {
         return false;
     }
 
-    size_t written_len = preferences.putUChar(key, value);
-    if (written_len == 0) {
-        ESP_LOGE(TAG, "put u8 failed %s", key);
-        return false;
+    if (hasTextInBuffer(persisted.device_id, sizeof(persisted.device_id))) {
+        copyText(config.device_id, sizeof(config.device_id), persisted.device_id);
+    } else {
+        ESP_LOGW(TAG, "invalid device id in blob, using default");
+    }
+
+    config.mode = sanitizeMode(persisted.mode);
+
+    if (isThresholdConfigValid(persisted.thresholds)) {
+        config.thresholds = persisted.thresholds;
+    } else {
+        ESP_LOGW(TAG, "invalid thresholds in blob, using default");
+    }
+
+    if (isLedStateValid(persisted.led)) {
+        config.led = persisted.led;
+    } else {
+        ESP_LOGW(TAG, "invalid led state in blob, using default");
     }
 
     return true;
 }
 
-bool putFloatKey(const char* key, float value) {
-    if (!has_nvs) {
-        ESP_LOGW(TAG, "nvs unavailable for %s", key);
-        return false;
-    }
+void loadEnergyTotal(RuntimeConfig& config) {
+    const float stored = preferences.getFloat(KEY_ENERGY_WH, config.energy_total_wh);
 
-    size_t written_len = preferences.putFloat(key, value);
-    if (written_len == 0) {
-        ESP_LOGE(TAG, "put float failed %s", key);
-        return false;
+    if (isEnergyTotalValid(stored)) {
+        config.energy_total_wh = stored;
+    } else {
+        ESP_LOGW(TAG, "invalid energy total in nvs, using default");
     }
-
-    return true;
 }
 }  // namespace
 
@@ -308,14 +206,16 @@ bool init() {
     applyDefaultConfig(runtime_config);
 
     has_nvs = preferences.begin(NVS_NAMESPACE, false);
-    is_initialized = true;
-
     if (!has_nvs) {
-        ESP_LOGE(TAG, "nvs open failed");
+        ESP_LOGE(TAG, "nvs open failed, running with defaults");
+        is_initialized = true;
         return false;
     }
 
-    loadRuntimeConfigFromNvs(runtime_config);
+    loadRuntimeConfigBlob(runtime_config);
+    loadEnergyTotal(runtime_config);
+
+    is_initialized = true;
     ESP_LOGI(TAG, "config loaded for %s", runtime_config.device_id);
     return true;
 }
@@ -323,22 +223,14 @@ bool init() {
 bool loadDefaults() {
     applyDefaultConfig(runtime_config);
 
-    if (!is_initialized) {
-        return true;
-    }
-
     if (!has_nvs) {
-        ESP_LOGW(TAG, "defaults in ram only");
+        ESP_LOGW(TAG, "defaults applied in ram only");
         return false;
     }
 
-    bool wrote_device_id = putStringKey(KEY_DEVICE_ID, runtime_config.device_id);
-    bool wrote_mode = putUCharKey(KEY_DEVICE_MODE, static_cast<uint8_t>(runtime_config.mode));
-    bool wrote_thresholds = saveThresholds(runtime_config.thresholds);
-    bool wrote_led = saveLedState(runtime_config.led);
-    bool wrote_energy = saveEnergyTotal(runtime_config.energy_total_wh);
-
-    return wrote_device_id && wrote_mode && wrote_thresholds && wrote_led && wrote_energy;
+    bool ok = writeRuntimeConfigBlob(runtime_config);
+    ok &= writeEnergyTotal(runtime_config.energy_total_wh);
+    return ok;
 }
 
 const RuntimeConfig& getConfig() { return runtime_config; }
@@ -349,22 +241,27 @@ bool saveThresholds(const ThresholdConfig& thresholds) {
         return false;
     }
 
+    RuntimeConfig next = runtime_config;
+    next.thresholds = thresholds;
+
+    if (!writeRuntimeConfigBlob(next)) {
+        return false;
+    }
+
     runtime_config.thresholds = thresholds;
-
-    bool wrote_temp_min = putFloatKey(KEY_TEMP_MIN_C, runtime_config.thresholds.temp_min_c);
-    bool wrote_temp_max = putFloatKey(KEY_TEMP_MAX_C, runtime_config.thresholds.temp_max_c);
-    bool wrote_humidity_min =
-        putFloatKey(KEY_HUMIDITY_MIN_PCT, runtime_config.thresholds.humidity_min_pct);
-    bool wrote_humidity_max =
-        putFloatKey(KEY_HUMIDITY_MAX_PCT, runtime_config.thresholds.humidity_max_pct);
-
-    return wrote_temp_min && wrote_temp_max && wrote_humidity_min && wrote_humidity_max;
+    return true;
 }
 
 bool saveMode(DeviceMode mode) {
-    runtime_config.mode = mode;
+    RuntimeConfig next = runtime_config;
+    next.mode = mode;
 
-    return putUCharKey(KEY_DEVICE_MODE, static_cast<uint8_t>(runtime_config.mode));
+    if (!writeRuntimeConfigBlob(next)) {
+        return false;
+    }
+
+    runtime_config.mode = mode;
+    return true;
 }
 
 bool saveLedState(const LedState& led) {
@@ -373,20 +270,15 @@ bool saveLedState(const LedState& led) {
         return false;
     }
 
+    RuntimeConfig next = runtime_config;
+    next.led = led;
+
+    if (!writeRuntimeConfigBlob(next)) {
+        return false;
+    }
+
     runtime_config.led = led;
-
-    bool wrote_power = putBoolKey(KEY_LED_POWER, runtime_config.led.power);
-    bool wrote_brightness = putUCharKey(KEY_LED_BRIGHTNESS_PCT, runtime_config.led.brightness_pct);
-    bool wrote_red_enabled = putBoolKey(KEY_LED_RED_ENABLED, runtime_config.led.red_enabled);
-    bool wrote_blue_enabled = putBoolKey(KEY_LED_BLUE_ENABLED, runtime_config.led.blue_enabled);
-    bool wrote_far_red_enabled =
-        putBoolKey(KEY_LED_FAR_RED_ENABLED, runtime_config.led.far_red_enabled);
-    bool wrote_red_pct = putUCharKey(KEY_LED_RED_PCT, runtime_config.led.red_dist_pct);
-    bool wrote_blue_pct = putUCharKey(KEY_LED_BLUE_PCT, runtime_config.led.blue_dist_pct);
-    bool wrote_far_red_pct = putUCharKey(KEY_LED_FAR_RED_PCT, runtime_config.led.far_red_dist_pct);
-
-    return wrote_power && wrote_brightness && wrote_red_enabled && wrote_blue_enabled &&
-           wrote_far_red_enabled && wrote_red_pct && wrote_blue_pct && wrote_far_red_pct;
+    return true;
 }
 
 bool saveEnergyTotal(float total_wh) {
@@ -395,7 +287,32 @@ bool saveEnergyTotal(float total_wh) {
         return false;
     }
 
+    if (!writeEnergyTotal(total_wh)) {
+        return false;
+    }
+
     runtime_config.energy_total_wh = total_wh;
-    return putFloatKey(KEY_ENERGY_TOTAL_WH, runtime_config.energy_total_wh);
+    return true;
+}
+
+bool saveRuntimeConfig(const RuntimeConfig& config) {
+    if (!isThresholdConfigValid(config.thresholds) || !isLedStateValid(config.led)) {
+        ESP_LOGW(TAG, "runtime config save rejected: invalid payload");
+        return false;
+    }
+
+    RuntimeConfig next = runtime_config;
+    next.mode = config.mode;
+    next.thresholds = config.thresholds;
+    next.led = config.led;
+
+    if (!writeRuntimeConfigBlob(next)) {
+        return false;
+    }
+
+    runtime_config.mode = next.mode;
+    runtime_config.thresholds = next.thresholds;
+    runtime_config.led = next.led;
+    return true;
 }
 }  // namespace ConfigManager
