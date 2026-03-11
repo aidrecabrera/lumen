@@ -127,8 +127,7 @@ bool writeRuntimeConfigBlob(const RuntimeConfig& config) {
     persisted.thresholds = config.thresholds;
     persisted.led = config.led;
 
-    const size_t written =
-        preferences.putBytes(KEY_RUNTIME_CFG, &persisted, sizeof(persisted));
+    const size_t written = preferences.putBytes(KEY_RUNTIME_CFG, &persisted, sizeof(persisted));
 
     if (written != sizeof(persisted)) {
         ESP_LOGE(TAG, "runtime config blob write failed");
@@ -160,8 +159,7 @@ bool writeEnergyTotal(float total_wh) {
 
 bool loadRuntimeConfigBlob(RuntimeConfig& config) {
     PersistedRuntimeConfig persisted = {};
-    const size_t read_len =
-        preferences.getBytes(KEY_RUNTIME_CFG, &persisted, sizeof(persisted));
+    const size_t read_len = preferences.getBytes(KEY_RUNTIME_CFG, &persisted, sizeof(persisted));
 
     if (read_len != sizeof(persisted)) {
         return false;

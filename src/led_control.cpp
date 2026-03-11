@@ -48,9 +48,7 @@ void unlockState() {
     }
 }
 
-bool isReadingWithinThresholds(
-    const SensorReading& reading, const ThresholdConfig& thresholds
-) {
+bool isReadingWithinThresholds(const SensorReading& reading, const ThresholdConfig& thresholds) {
     if (!isfinite(reading.temperature_c) || !isfinite(reading.humidity_pct)) {
         return false;
     }
@@ -129,9 +127,7 @@ void loadPersistedState() {
     current_thresholds = config.thresholds;
 }
 
-bool persistRuntimeState(
-    DeviceMode mode, const LedState& led, const ThresholdConfig& thresholds
-) {
+bool persistRuntimeState(DeviceMode mode, const LedState& led, const ThresholdConfig& thresholds) {
     RuntimeConfig config = ConfigManager::getConfig();
     config.mode = mode;
     config.led = led;
@@ -205,11 +201,7 @@ AckMessage applyModeChange(const CommandEnvelope& command) {
 
     ESP_LOGI(TAG, "mode changed");
     return buildAck(
-        command.command_id,
-        AckResult::APPLIED,
-        "mode applied",
-        command.desired_mode,
-        led_snapshot
+        command.command_id, AckResult::APPLIED, "mode applied", command.desired_mode, led_snapshot
     );
 }
 
@@ -232,11 +224,7 @@ AckMessage applyConfigChange(const CommandEnvelope& command) {
     unlockState();
 
     return buildAck(
-        command.command_id,
-        AckResult::APPLIED,
-        "config applied",
-        mode_snapshot,
-        led_snapshot
+        command.command_id, AckResult::APPLIED, "config applied", mode_snapshot, led_snapshot
     );
 }
 
@@ -264,11 +252,7 @@ AckMessage applyLedChange(const CommandEnvelope& command) {
 
     applyToHardware(command.desired_led);
     return buildAck(
-        command.command_id,
-        AckResult::APPLIED,
-        "led applied",
-        mode_snapshot,
-        command.desired_led
+        command.command_id, AckResult::APPLIED, "led applied", mode_snapshot, command.desired_led
     );
 }
 }  // namespace

@@ -99,7 +99,8 @@ bool decodeBaseDocument(
     char* out_command_id,
     size_t out_command_id_len
 ) {
-    if (payload == nullptr || length == 0U || out_command_id == nullptr || out_command_id_len == 0U) {
+    if (payload == nullptr || length == 0U || out_command_id == nullptr ||
+        out_command_id_len == 0U) {
         ESP_LOGW(TAG, "invalid command frame");
         return false;
     }

@@ -28,8 +28,7 @@ uint32_t nextBackoffMs(uint32_t current_backoff_ms) {
     }
 
     const uint32_t doubled_backoff_ms = current_backoff_ms * 2U;
-    return (doubled_backoff_ms > WIFI_BACKOFF_MAX_MS) ? WIFI_BACKOFF_MAX_MS
-                                                      : doubled_backoff_ms;
+    return (doubled_backoff_ms > WIFI_BACKOFF_MAX_MS) ? WIFI_BACKOFF_MAX_MS : doubled_backoff_ms;
 }
 
 void resetState() {

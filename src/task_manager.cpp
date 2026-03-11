@@ -30,28 +30,22 @@ static QueueHandle_t energy_to_mqtt_queue = nullptr;
 static QueueHandle_t ack_to_mqtt_queue = nullptr;
 
 static StaticQueue_t sensor_to_mqtt_queue_storage;
-static uint8_t sensor_to_mqtt_queue_buffer
-    [QUEUE_SENSOR_TO_MQTT_LENGTH * sizeof(SensorReading)];
+static uint8_t sensor_to_mqtt_queue_buffer[QUEUE_SENSOR_TO_MQTT_LENGTH * sizeof(SensorReading)];
 
 static StaticQueue_t sensor_to_led_queue_storage;
-static uint8_t sensor_to_led_queue_buffer
-    [QUEUE_SENSOR_TO_LED_LENGTH * sizeof(SensorReading)];
+static uint8_t sensor_to_led_queue_buffer[QUEUE_SENSOR_TO_LED_LENGTH * sizeof(SensorReading)];
 
 static StaticQueue_t command_dispatch_queue_storage;
-static uint8_t command_dispatch_queue_buffer
-    [QUEUE_COMMAND_LENGTH * sizeof(CommandEnvelope)];
+static uint8_t command_dispatch_queue_buffer[QUEUE_COMMAND_LENGTH * sizeof(CommandEnvelope)];
 
 static StaticQueue_t status_to_mqtt_queue_storage;
-static uint8_t status_to_mqtt_queue_buffer
-    [QUEUE_STATUS_LENGTH * sizeof(StatusMessage)];
+static uint8_t status_to_mqtt_queue_buffer[QUEUE_STATUS_LENGTH * sizeof(StatusMessage)];
 
 static StaticQueue_t energy_to_mqtt_queue_storage;
-static uint8_t energy_to_mqtt_queue_buffer
-    [QUEUE_ENERGY_LENGTH * sizeof(EnergyMessage)];
+static uint8_t energy_to_mqtt_queue_buffer[QUEUE_ENERGY_LENGTH * sizeof(EnergyMessage)];
 
 static StaticQueue_t ack_to_mqtt_queue_storage;
-static uint8_t ack_to_mqtt_queue_buffer
-    [QUEUE_ACK_LENGTH * sizeof(AckMessage)];
+static uint8_t ack_to_mqtt_queue_buffer[QUEUE_ACK_LENGTH * sizeof(AckMessage)];
 
 void registerCurrentTaskWithWatchdog(const char* task_name) {
     const esp_err_t result = esp_task_wdt_add(nullptr);
@@ -221,8 +215,7 @@ void taskSensors(void* parameter) {
             continue;
         }
 
-        const bool sent_mqtt =
-            sendSensorReading(sensor_to_mqtt_queue, reading, "sensor_to_mqtt");
+        const bool sent_mqtt = sendSensorReading(sensor_to_mqtt_queue, reading, "sensor_to_mqtt");
         const bool sent_led = sendSensorReading(sensor_to_led_queue, reading, "sensor_to_led");
 
         if (!sent_mqtt || !sent_led) {
@@ -245,9 +238,8 @@ void taskLed(void* parameter) {
         esp_task_wdt_reset();
 
         CommandEnvelope command = {};
-        const BaseType_t receive_result = xQueueReceive(
-            command_dispatch_queue, &command, pdMS_TO_TICKS(LED_CONTROL_INTERVAL_MS)
-        );
+        const BaseType_t receive_result =
+            xQueueReceive(command_dispatch_queue, &command, pdMS_TO_TICKS(LED_CONTROL_INTERVAL_MS));
 
         esp_task_wdt_reset();
         drainLatestSensor(latest_reading, has_sensor_reading);
@@ -388,10 +380,7 @@ bool createQueues() {
     );
 
     ack_to_mqtt_queue = xQueueCreateStatic(
-        QUEUE_ACK_LENGTH,
-        sizeof(AckMessage),
-        ack_to_mqtt_queue_buffer,
-        &ack_to_mqtt_queue_storage
+        QUEUE_ACK_LENGTH, sizeof(AckMessage), ack_to_mqtt_queue_buffer, &ack_to_mqtt_queue_storage
     );
 
     if (sensor_to_mqtt_queue == nullptr || sensor_to_led_queue == nullptr ||
