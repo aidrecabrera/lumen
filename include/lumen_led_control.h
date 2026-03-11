@@ -1,6 +1,6 @@
 #pragma once
 
-#include "types.h"
+#include "lumen_app_types.h"
 
 namespace LedControl {
 

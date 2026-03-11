@@ -4,7 +4,7 @@
 #include <freertos/queue.h>
 #include <freertos/task.h>
 
-#include "types.h"
+#include "lumen_app_types.h"
 
 namespace TaskManager {
 

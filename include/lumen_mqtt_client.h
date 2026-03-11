@@ -2,7 +2,7 @@
 
 #include <Client.h>
 
-#include "types.h"
+#include "lumen_app_types.h"
 
 typedef void (*MqttInboundCallback)(const char* topic, const uint8_t* payload, uint16_t length);
 

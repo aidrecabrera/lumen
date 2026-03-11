@@ -1,4 +1,4 @@
-#include "validation.h"
+#include "lumen_type_validation.h"
 
 #include <math.h>
 

@@ -1,4 +1,4 @@
-#include "config_manager.h"
+#include "lumen_config_manager.h"
 
 #include <Preferences.h>
 #include <esp_err.h>
@@ -7,12 +7,12 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "utils.h"
-#include "validation.h"
+#include "lumen_system_utils.h"
+#include "lumen_type_validation.h"
 
 namespace {
 static const char* TAG = "config_manager";
-static const char* NVS_NAMESPACE = "spot";
+static const char* NVS_NAMESPACE = "lumen";
 
 static const char* KEY_RUNTIME_CFG = "runtime_cfg";
 static const char* KEY_ENERGY_WH = "energy_wh";
@@ -64,7 +64,7 @@ bool generateDeviceId(char* out_device_id, size_t out_len) {
     const int written = snprintf(
         out_device_id,
         out_len,
-        "spot-%02x%02x%02x%02x%02x%02x",
+        "lumen-%02x%02x%02x%02x%02x%02x",
         base_mac[0],
         base_mac[1],
         base_mac[2],
@@ -89,7 +89,7 @@ void applyDefaultConfig(RuntimeConfig& config) {
     config.energy_total_wh = 0.0f;
 
     if (!generateDeviceId(config.device_id, sizeof(config.device_id))) {
-        copyText(config.device_id, sizeof(config.device_id), "spot-unknown");
+        copyText(config.device_id, sizeof(config.device_id), "lumen-unknown");
     }
 }
 

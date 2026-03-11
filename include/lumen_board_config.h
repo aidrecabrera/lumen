@@ -9,7 +9,7 @@ static constexpr uint8_t LED_DATA_PIN = 18;
 static constexpr uint16_t LED_PIXEL_COUNT = 16;
 
 static constexpr uint32_t WIFI_STA_CONNECT_TIMEOUT_MS = 15000;
-static constexpr const char* WIFI_HOSTNAME_PREFIX = "spot-";
+static constexpr const char* WIFI_HOSTNAME_PREFIX = "lumen-";
 
 static constexpr uint32_t TASK_SENSORS_STACK_BYTES = 6144;
 static constexpr uint32_t TASK_LED_STACK_BYTES = 6144;
@@ -38,7 +38,7 @@ static constexpr uint8_t QUEUE_ACK_LENGTH = 8;
 static constexpr const char* MQTT_BROKER_IP = "192.168.1.50";
 static constexpr uint16_t MQTT_BROKER_PORT = 1883;
 
-static constexpr const char* MQTT_TOPIC_ROOT = "spot";
+static constexpr const char* MQTT_TOPIC_ROOT = "lumen";
 static constexpr const char* MQTT_TOPIC_AVAILABILITY_SUFFIX = "availability";
 static constexpr const char* MQTT_TOPIC_TELEMETRY_SUFFIX = "telemetry";
 static constexpr const char* MQTT_TOPIC_STATUS_SUFFIX = "status";

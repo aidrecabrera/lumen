@@ -1,6 +1,6 @@
 #pragma once
 
-#include "types.h"
+#include "lumen_app_types.h"
 
 bool isThresholdConfigValid(const ThresholdConfig& thresholds);
 bool isLedStateValid(const LedState& led);

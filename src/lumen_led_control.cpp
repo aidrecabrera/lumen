@@ -1,4 +1,4 @@
-#include "led_control.h"
+#include "lumen_led_control.h"
 
 #include <Adafruit_NeoPixel.h>
 #include <esp_log.h>
@@ -7,10 +7,10 @@
 #include <math.h>
 #include <string.h>
 
-#include "config.h"
-#include "config_manager.h"
-#include "utils.h"
-#include "validation.h"
+#include "lumen_board_config.h"
+#include "lumen_config_manager.h"
+#include "lumen_system_utils.h"
+#include "lumen_type_validation.h"
 
 namespace {
 static const char* TAG = "led_control";

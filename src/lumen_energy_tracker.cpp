@@ -1,11 +1,11 @@
-#include "energy_tracker.h"
+#include "lumen_energy_tracker.h"
 
 #include <esp_log.h>
 #include <math.h>
 
-#include "config_manager.h"
-#include "utils.h"
-#include "validation.h"
+#include "lumen_config_manager.h"
+#include "lumen_system_utils.h"
+#include "lumen_type_validation.h"
 
 namespace {
 static const char* TAG = "energy_tracker";

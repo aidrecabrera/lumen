@@ -1,14 +1,14 @@
-#include "command_handler.h"
+#include "lumen_command_handler.h"
 
 #include <ArduinoJson.h>
 #include <esp_log.h>
 #include <math.h>
 #include <string.h>
 
-#include "config.h"
-#include "task_manager.h"
-#include "utils.h"
-#include "validation.h"
+#include "lumen_board_config.h"
+#include "lumen_system_utils.h"
+#include "lumen_task_manager.h"
+#include "lumen_type_validation.h"
 
 namespace {
 static const char* TAG = "command_handler";

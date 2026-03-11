@@ -1,4 +1,4 @@
-#include "wifi_manager.h"
+#include "lumen_wifi_manager.h"
 
 #include <WiFi.h>
 #include <esp_log.h>
@@ -6,9 +6,9 @@
 #include <esp_system.h>
 #include <stdio.h>
 
-#include "config.h"
-#include "secrets.h"
-#include "utils.h"
+#include "lumen_board_config.h"
+#include "lumen_secrets.h"
+#include "lumen_system_utils.h"
 
 namespace {
 static const char* TAG = "wifi_manager";

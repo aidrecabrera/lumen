@@ -1,4 +1,4 @@
-#include "task_manager.h"
+#include "lumen_task_manager.h"
 
 #include <esp_log.h>
 #include <esp_task_wdt.h>
@@ -6,14 +6,14 @@
 #include <freertos/queue.h>
 #include <freertos/task.h>
 
-#include "command_handler.h"
-#include "config.h"
-#include "energy_tracker.h"
-#include "led_control.h"
-#include "mqtt_client.h"
-#include "sensors.h"
-#include "utils.h"
-#include "wifi_manager.h"
+#include "lumen_board_config.h"
+#include "lumen_command_handler.h"
+#include "lumen_energy_tracker.h"
+#include "lumen_led_control.h"
+#include "lumen_mqtt_client.h"
+#include "lumen_sensor_manager.h"
+#include "lumen_system_utils.h"
+#include "lumen_wifi_manager.h"
 
 namespace {
 static const char* TAG = "task_manager";

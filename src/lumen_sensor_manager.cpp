@@ -1,4 +1,4 @@
-#include "sensors.h"
+#include "lumen_sensor_manager.h"
 
 #include <BH1750.h>
 #include <DHT.h>
@@ -6,8 +6,8 @@
 #include <esp_log.h>
 #include <math.h>
 
-#include "config.h"
-#include "utils.h"
+#include "lumen_board_config.h"
+#include "lumen_system_utils.h"
 
 namespace {
 static const char* TAG = "sensors";

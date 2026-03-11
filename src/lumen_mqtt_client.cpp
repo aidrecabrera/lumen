@@ -1,4 +1,4 @@
-#include "mqtt_client.h"
+#include "lumen_mqtt_client.h"
 
 #include <ArduinoJson.h>
 #include <Client.h>
@@ -11,9 +11,9 @@
 #include <freertos/semphr.h>
 #include <string.h>
 
-#include "config.h"
-#include "utils.h"
-#include "wifi_manager.h"
+#include "lumen_board_config.h"
+#include "lumen_system_utils.h"
+#include "lumen_wifi_manager.h"
 
 namespace {
 static const char* TAG = "mqtt_client";
@@ -23,7 +23,7 @@ static constexpr uint32_t MQTT_BACKOFF_MAX_MS = 30000U;
 
 static constexpr size_t TOPIC_LEN = 96U;
 static constexpr size_t ACK_TOPIC_LEN = 128U;
-static constexpr size_t CLIENT_ID_LEN = sizeof("spot-fw-") + DEVICE_ID_MAX_LEN;
+static constexpr size_t CLIENT_ID_LEN = sizeof("lumen-fw-") + DEVICE_ID_MAX_LEN;
 static constexpr size_t ACK_DOC_SIZE = STATUS_DOC_SIZE + 128U;
 
 static constexpr size_t INBOUND_QUEUE_LENGTH = 4U;
@@ -154,7 +154,8 @@ bool buildAckTopic(char* out_topic, size_t out_len, const char* command_id) {
 }
 
 bool buildClientId() {
-    const int written = snprintf(client_id_buf, sizeof(client_id_buf), "spot-fw-%s", device_id_buf);
+    const int written =
+        snprintf(client_id_buf, sizeof(client_id_buf), "lumen-fw-%s", device_id_buf);
     return (written > 0) && (static_cast<size_t>(written) < sizeof(client_id_buf));
 }
 
