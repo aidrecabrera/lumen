@@ -6,14 +6,13 @@
 #include <WiFiClient.h>
 #include <esp_log.h>
 #include <esp_system.h>
-#include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <freertos/semphr.h>
-#include <stdio.h>
 #include <string.h>
 
 #include "config.h"
+#include "utils.h"
 #include "wifi_manager.h"
 
 namespace {
@@ -32,10 +31,10 @@ static constexpr size_t MQTT_FIXED_HEADER_SLACK = 16U;
 
 constexpr size_t maxSize(size_t a, size_t b) { return (a > b) ? a : b; }
 
-static constexpr size_t MQTT_MAX_PAYLOAD_SIZE = maxSize(
-    COMMAND_DOC_SIZE,
-    maxSize(TELEMETRY_DOC_SIZE, maxSize(STATUS_DOC_SIZE, maxSize(ENERGY_DOC_SIZE, ACK_DOC_SIZE)))
-);
+static constexpr size_t MQTT_MAX_PAYLOAD_SIZE =
+    maxSize(COMMAND_DOC_SIZE,
+            maxSize(TELEMETRY_DOC_SIZE,
+                    maxSize(STATUS_DOC_SIZE, maxSize(ENERGY_DOC_SIZE, ACK_DOC_SIZE))));
 
 static constexpr uint16_t MQTT_PACKET_BUFFER_SIZE =
     static_cast<uint16_t>(ACK_TOPIC_LEN + MQTT_MAX_PAYLOAD_SIZE + MQTT_FIXED_HEADER_SLACK);
@@ -50,7 +49,7 @@ struct InboundMessage {
 };
 
 class LockGuard {
-   public:
+public:
     explicit LockGuard(SemaphoreHandle_t mutex, TickType_t timeout_ticks = pdMS_TO_TICKS(1000))
         : mutex_(mutex), locked_(false) {
         if (mutex_ != nullptr) {
@@ -66,7 +65,7 @@ class LockGuard {
 
     bool locked() const { return locked_; }
 
-   private:
+private:
     SemaphoreHandle_t mutex_;
     bool locked_;
 };
@@ -98,27 +97,9 @@ static uint64_t next_connect_ms = 0;
 static bool (*wifi_connected_fn)() = nullptr;
 static MqttInboundCallback inbound_callback = nullptr;
 
-uint64_t getNowMs() { return static_cast<uint64_t>(esp_timer_get_time() / 1000ULL); }
-
 bool defaultWifiConnected() { return WifiManager::isConnected(); }
 
 bool hasText(const char* text) { return (text != nullptr) && (text[0] != '\0'); }
-
-bool copyText(char* dest, size_t dest_len, const char* src) {
-    if (dest == nullptr || dest_len == 0U || src == nullptr) {
-        return false;
-    }
-
-    const size_t src_len = strnlen(src, dest_len);
-    if (src_len >= dest_len) {
-        dest[0] = '\0';
-        return false;
-    }
-
-    memcpy(dest, src, src_len);
-    dest[src_len] = '\0';
-    return true;
-}
 
 bool ensureInfrastructure() {
     if (mqtt_mutex == nullptr) {
@@ -180,10 +161,8 @@ bool buildClientId() {
 bool buildTopics() {
     const bool has_telemetry =
         buildTopic(telemetry_topic, sizeof(telemetry_topic), MQTT_TOPIC_TELEMETRY_SUFFIX);
-    const bool has_status =
-        buildTopic(status_topic, sizeof(status_topic), MQTT_TOPIC_STATUS_SUFFIX);
-    const bool has_energy =
-        buildTopic(energy_topic, sizeof(energy_topic), MQTT_TOPIC_ENERGY_SUFFIX);
+    const bool has_status = buildTopic(status_topic, sizeof(status_topic), MQTT_TOPIC_STATUS_SUFFIX);
+    const bool has_energy = buildTopic(energy_topic, sizeof(energy_topic), MQTT_TOPIC_ENERGY_SUFFIX);
     const bool has_availability =
         buildTopic(availability_topic, sizeof(availability_topic), MQTT_TOPIC_AVAILABILITY_SUFFIX);
     const bool has_cmd_led =
@@ -203,7 +182,8 @@ uint32_t nextBackoffMs(uint32_t current_backoff_ms) {
     }
 
     const uint32_t doubled_backoff_ms = current_backoff_ms * 2U;
-    return (doubled_backoff_ms > MQTT_BACKOFF_MAX_MS) ? MQTT_BACKOFF_MAX_MS : doubled_backoff_ms;
+    return (doubled_backoff_ms > MQTT_BACKOFF_MAX_MS) ? MQTT_BACKOFF_MAX_MS
+                                                      : doubled_backoff_ms;
 }
 
 void resetReconnectState() {
@@ -318,9 +298,7 @@ bool encodeEnergy(
     return encoded_len > 0U;
 }
 
-bool encodeAck(
-    const AckMessage& ack, uint8_t* payload_buf, size_t payload_len, size_t& encoded_len
-) {
+bool encodeAck(const AckMessage& ack, uint8_t* payload_buf, size_t payload_len, size_t& encoded_len) {
     StaticJsonDocument<ACK_DOC_SIZE> doc;
     doc["command_id"] = ack.command_id;
     doc["result"] = static_cast<uint8_t>(ack.result);
@@ -371,7 +349,11 @@ bool publishAvailabilityOnlineLocked() {
 
 bool connectBrokerLocked() {
     const bool was_connected = broker_client.connect(
-        client_id_buf, availability_topic, MQTT_QOS_STATUS, true, kAvailabilityOffline
+        client_id_buf,
+        availability_topic,
+        MQTT_QOS_STATUS,
+        true,
+        kAvailabilityOffline
     );
 
     if (!was_connected) {
@@ -431,7 +413,7 @@ void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
     memcpy(msg.payload, payload, msg.length);
 
     if (xQueueSend(inbound_queue, &msg, 0) != pdTRUE) {
-        ESP_LOGW(TAG, "inbound queue full, dropped message on topic %s length %u", msg.topic, msg.length);
+        ESP_LOGW(TAG, "inbound queue full, dropped topic=%s len=%u", msg.topic, msg.length);
     }
 }
 }  // namespace
@@ -493,9 +475,7 @@ bool init(const char* device_id, Client& net_client, bool (*wifi_connected)()) {
     return true;
 }
 
-bool init(const char* device_id) {
-    return init(device_id, default_wifi_client, defaultWifiConnected);
-}
+bool init(const char* device_id) { return init(device_id, default_wifi_client, defaultWifiConnected); }
 
 bool connectOrPoll() {
     if (!is_initialized || wifi_connected_fn == nullptr) {
