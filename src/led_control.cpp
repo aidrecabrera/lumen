@@ -2,7 +2,6 @@
 
 #include <Adafruit_NeoPixel.h>
 #include <esp_log.h>
-#include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <math.h>
@@ -10,6 +9,8 @@
 
 #include "config.h"
 #include "config_manager.h"
+#include "utils.h"
+#include "validation.h"
 
 namespace {
 static const char* TAG = "led_control";
@@ -24,8 +25,6 @@ static ThresholdConfig current_thresholds = {};
 static StaticSemaphore_t state_mutex_storage;
 static SemaphoreHandle_t state_mutex = nullptr;
 
-uint64_t getNowMs() { return static_cast<uint64_t>(esp_timer_get_time() / 1000ULL); }
-
 uint32_t getUptimeSec() { return static_cast<uint32_t>(esp_timer_get_time() / 1000000ULL); }
 
 bool ensureStateMutex() {
@@ -37,63 +36,16 @@ bool ensureStateMutex() {
     return state_mutex != nullptr;
 }
 
-bool lockState(TickType_t timeout_ticks = portMAX_DELAY) {
-    return (state_mutex != nullptr) && (xSemaphoreTake(state_mutex, timeout_ticks) == pdTRUE);
+void lockState() {
+    if (ensureStateMutex()) {
+        xSemaphoreTake(state_mutex, portMAX_DELAY);
+    }
 }
 
 void unlockState() {
     if (state_mutex != nullptr) {
         xSemaphoreGive(state_mutex);
     }
-}
-
-bool copyText(char* dest, size_t dest_len, const char* src) {
-    if (dest == nullptr || dest_len == 0U || src == nullptr) {
-        return false;
-    }
-
-    const size_t src_len = strlen(src);
-    if (src_len >= dest_len) {
-        dest[0] = '\0';
-        return false;
-    }
-
-    memcpy(dest, src, src_len);
-    dest[src_len] = '\0';
-    return true;
-}
-
-bool isThresholdConfigValid(const ThresholdConfig& thresholds) {
-    if (!isfinite(thresholds.temp_min_c) || !isfinite(thresholds.temp_max_c) ||
-        !isfinite(thresholds.humidity_min_pct) || !isfinite(thresholds.humidity_max_pct)) {
-        return false;
-    }
-
-    if (thresholds.temp_min_c > thresholds.temp_max_c) {
-        return false;
-    }
-
-    if (thresholds.humidity_min_pct > thresholds.humidity_max_pct) {
-        return false;
-    }
-
-    return true;
-}
-
-bool isLedStateValid(const LedState& led) {
-    const uint16_t total_pct = static_cast<uint16_t>(led.red_dist_pct) +
-                               static_cast<uint16_t>(led.blue_dist_pct) +
-                               static_cast<uint16_t>(led.far_red_dist_pct);
-
-    if (led.brightness_pct > 100U) {
-        return false;
-    }
-
-    if (total_pct != 100U) {
-        return false;
-    }
-
-    return true;
 }
 
 bool isReadingWithinThresholds(
@@ -156,7 +108,7 @@ void applyToHardware(const LedState& led) {
     const uint8_t blue_pct = led.blue_enabled ? led.blue_dist_pct : 0U;
     const uint8_t far_red_pct = led.far_red_enabled ? led.far_red_dist_pct : 0U;
 
-    // Intentional deviation: far-red is approximated on RGB LEDs as red.
+    // Far-red is approximated on RGB LEDs as additional red.
     const uint8_t red_level =
         scaleChannel(led.brightness_pct, static_cast<uint8_t>(red_pct + far_red_pct));
     const uint8_t blue_level = scaleChannel(led.brightness_pct, blue_pct);
@@ -188,24 +140,23 @@ bool persistRuntimeState(
 }
 
 void snapshotState(DeviceMode& mode, LedState& led, ThresholdConfig* thresholds = nullptr) {
-    mode = DeviceMode::AUTONOMOUS;
     memset(&led, 0, sizeof(led));
+    mode = DeviceMode::AUTONOMOUS;
 
     if (thresholds != nullptr) {
         memset(thresholds, 0, sizeof(*thresholds));
     }
 
-    if (!lockState(pdMS_TO_TICKS(100))) {
-        ESP_LOGW(TAG, "state lock timeout");
+    if (!ensureStateMutex()) {
         return;
     }
 
+    lockState();
     mode = current_mode;
     led = current_led;
     if (thresholds != nullptr) {
         *thresholds = current_thresholds;
     }
-
     unlockState();
 }
 
@@ -239,25 +190,27 @@ AckMessage rejectCommand(const CommandEnvelope& command, const char* reason) {
 }
 
 AckMessage applyModeChange(const CommandEnvelope& command) {
+    DeviceMode mode_snapshot = DeviceMode::AUTONOMOUS;
     LedState led_snapshot = {};
     ThresholdConfig thresholds_snapshot = {};
-    DeviceMode mode_snapshot = DeviceMode::AUTONOMOUS;
     snapshotState(mode_snapshot, led_snapshot, &thresholds_snapshot);
 
-    const DeviceMode next_mode = command.desired_mode;
-    if (!persistRuntimeState(next_mode, led_snapshot, thresholds_snapshot)) {
+    if (!persistRuntimeState(command.desired_mode, led_snapshot, thresholds_snapshot)) {
         return rejectCommand(command, "persist failed");
     }
 
-    if (!lockState(pdMS_TO_TICKS(100))) {
-        return rejectCommand(command, "state lock failed");
-    }
-
-    current_mode = next_mode;
+    lockState();
+    current_mode = command.desired_mode;
     unlockState();
 
     ESP_LOGI(TAG, "mode changed");
-    return buildAck(command.command_id, AckResult::APPLIED, "mode applied", next_mode, led_snapshot);
+    return buildAck(
+        command.command_id,
+        AckResult::APPLIED,
+        "mode applied",
+        command.desired_mode,
+        led_snapshot
+    );
 }
 
 AckMessage applyConfigChange(const CommandEnvelope& command) {
@@ -265,19 +218,16 @@ AckMessage applyConfigChange(const CommandEnvelope& command) {
         return rejectCommand(command, "bad thresholds");
     }
 
+    DeviceMode mode_snapshot = DeviceMode::AUTONOMOUS;
     LedState led_snapshot = {};
     ThresholdConfig thresholds_snapshot = {};
-    DeviceMode mode_snapshot = DeviceMode::AUTONOMOUS;
     snapshotState(mode_snapshot, led_snapshot, &thresholds_snapshot);
 
     if (!persistRuntimeState(mode_snapshot, led_snapshot, command.desired_thresholds)) {
         return rejectCommand(command, "persist failed");
     }
 
-    if (!lockState(pdMS_TO_TICKS(100))) {
-        return rejectCommand(command, "state lock failed");
-    }
-
+    lockState();
     current_thresholds = command.desired_thresholds;
     unlockState();
 
@@ -295,9 +245,9 @@ AckMessage applyLedChange(const CommandEnvelope& command) {
         return rejectCommand(command, "bad led state");
     }
 
+    DeviceMode mode_snapshot = DeviceMode::AUTONOMOUS;
     LedState led_snapshot = {};
     ThresholdConfig thresholds_snapshot = {};
-    DeviceMode mode_snapshot = DeviceMode::AUTONOMOUS;
     snapshotState(mode_snapshot, led_snapshot, &thresholds_snapshot);
 
     if (mode_snapshot == DeviceMode::AUTONOMOUS) {
@@ -308,10 +258,7 @@ AckMessage applyLedChange(const CommandEnvelope& command) {
         return rejectCommand(command, "persist failed");
     }
 
-    if (!lockState(pdMS_TO_TICKS(100))) {
-        return rejectCommand(command, "state lock failed");
-    }
-
+    lockState();
     current_led = command.desired_led;
     unlockState();
 
@@ -400,14 +347,9 @@ void controlTick(const SensorReading& latest_reading) {
         return;
     }
 
-    if (!lockState(pdMS_TO_TICKS(100))) {
-        ESP_LOGW(TAG, "state lock timeout");
-        return;
-    }
-
+    lockState();
     current_led.brightness_pct = next_brightness_pct;
     led_snapshot = current_led;
-
     unlockState();
 
     applyToHardware(led_snapshot);
