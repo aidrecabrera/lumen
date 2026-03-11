@@ -2,45 +2,22 @@
 
 #include <ArduinoJson.h>
 #include <esp_log.h>
-#include <esp_timer.h>
+#include <math.h>
 #include <string.h>
 
 #include "config.h"
 #include "task_manager.h"
+#include "utils.h"
+#include "validation.h"
 
 namespace {
 static const char* TAG = "command_handler";
 
-uint64_t getNowMs() { return static_cast<uint64_t>(esp_timer_get_time() / 1000ULL); }
-
-bool endsWith(const char* text, const char* suffix) {
-    if (text == nullptr || suffix == nullptr) {
-        return false;
-    }
-
-    size_t text_len = strlen(text);
-    size_t suffix_len = strlen(suffix);
-
-    if (text_len < suffix_len) {
-        return false;
-    }
-
-    return strcmp(text + text_len - suffix_len, suffix) == 0;
-}
-
-void copyText(char* dest, size_t dest_len, const char* src) {
-    if (dest == nullptr || dest_len == 0) {
-        return;
-    }
-
-    if (src == nullptr) {
-        dest[0] = '\0';
-        return;
-    }
-
-    strncpy(dest, src, dest_len - 1);
-    dest[dest_len - 1] = '\0';
-}
+static constexpr size_t COMMAND_ID_DOC_SLACK = COMMAND_ID_MAX_LEN + 32U;
+static constexpr size_t LED_COMMAND_DOC_SIZE = JSON_OBJECT_SIZE(9) + COMMAND_ID_DOC_SLACK;
+static constexpr size_t CONFIG_COMMAND_DOC_SIZE =
+    JSON_OBJECT_SIZE(2) + JSON_OBJECT_SIZE(4) + COMMAND_ID_DOC_SLACK;
+static constexpr size_t MODE_COMMAND_DOC_SIZE = JSON_OBJECT_SIZE(2) + COMMAND_ID_DOC_SLACK;
 
 bool readBoolField(JsonVariantConst value, bool& out_value) {
     if (value.isNull()) {
@@ -56,7 +33,26 @@ bool readU8Field(JsonVariantConst value, uint8_t& out_value) {
         return false;
     }
 
-    out_value = value.as<uint8_t>();
+    const uint32_t raw_value = value.as<uint32_t>();
+    if (raw_value > UINT8_MAX) {
+        ESP_LOGW(TAG, "u8 field out of range: %lu", static_cast<unsigned long>(raw_value));
+        return false;
+    }
+
+    out_value = static_cast<uint8_t>(raw_value);
+    return true;
+}
+
+bool readPercentField(JsonVariantConst value, uint8_t& out_value) {
+    if (!readU8Field(value, out_value)) {
+        return false;
+    }
+
+    if (out_value > 100U) {
+        ESP_LOGW(TAG, "percent field out of range: %u", out_value);
+        return false;
+    }
+
     return true;
 }
 
@@ -65,16 +61,22 @@ bool readFloatField(JsonVariantConst value, float& out_value) {
         return false;
     }
 
-    out_value = value.as<float>();
+    const float raw_value = value.as<float>();
+    if (!isfinite(raw_value)) {
+        ESP_LOGW(TAG, "float field not finite");
+        return false;
+    }
+
+    out_value = raw_value;
     return true;
 }
 
 bool readModeField(JsonVariantConst value, DeviceMode& out_mode) {
-    if (value.isNull()) {
+    uint8_t raw_mode = 0;
+    if (!readU8Field(value, raw_mode)) {
         return false;
     }
 
-    uint8_t raw_mode = value.as<uint8_t>();
     if (raw_mode == static_cast<uint8_t>(DeviceMode::AUTONOMOUS)) {
         out_mode = DeviceMode::AUTONOMOUS;
         return true;
@@ -85,29 +87,40 @@ bool readModeField(JsonVariantConst value, DeviceMode& out_mode) {
         return true;
     }
 
+    ESP_LOGW(TAG, "mode invalid: %u", raw_mode);
     return false;
 }
 
+template <size_t DocSize>
 bool decodeBaseDocument(
     const uint8_t* payload,
     uint16_t length,
-    StaticJsonDocument<COMMAND_DOC_SIZE>& doc,
+    StaticJsonDocument<DocSize>& doc,
     char* out_command_id,
     size_t out_command_id_len
 ) {
-    DeserializationError error = deserializeMsgPack(doc, payload, length);
-    if (error) {
-        ESP_LOGW(TAG, "decode failed");
+    if (payload == nullptr || length == 0U || out_command_id == nullptr || out_command_id_len == 0U) {
+        ESP_LOGW(TAG, "invalid command frame");
         return false;
     }
 
-    const char* command_id = doc["command_id"];
+    const DeserializationError error = deserializeMsgPack(doc, payload, length);
+    if (error) {
+        ESP_LOGW(TAG, "decode failed: %s", error.c_str());
+        return false;
+    }
+
+    const char* command_id = doc["command_id"] | nullptr;
     if (command_id == nullptr || command_id[0] == '\0') {
         ESP_LOGW(TAG, "command id missing");
         return false;
     }
 
-    copyText(out_command_id, out_command_id_len, command_id);
+    if (!copyText(out_command_id, out_command_id_len, command_id)) {
+        ESP_LOGW(TAG, "command id too long");
+        return false;
+    }
+
     return true;
 }
 
@@ -119,28 +132,30 @@ void setEnvelopeBase(CommandEnvelope& out_command, const char* command_id, Comma
 }
 
 bool decodeLedPayload(const uint8_t* payload, uint16_t length, CommandEnvelope& out_command) {
-    StaticJsonDocument<COMMAND_DOC_SIZE> doc;
+    StaticJsonDocument<LED_COMMAND_DOC_SIZE> doc;
     char command_id[COMMAND_ID_MAX_LEN] = {};
 
-    bool has_base = decodeBaseDocument(payload, length, doc, command_id, sizeof(command_id));
-    if (!has_base) {
+    if (!decodeBaseDocument(payload, length, doc, command_id, sizeof(command_id))) {
         return false;
     }
 
     setEnvelopeBase(out_command, command_id, CommandKind::LED_CONTROL);
 
-    bool has_power = readBoolField(doc["power"], out_command.desired_led.power);
-    bool has_red_enabled = readBoolField(doc["red_enabled"], out_command.desired_led.red_enabled);
-    bool has_blue_enabled =
+    const bool has_power = readBoolField(doc["power"], out_command.desired_led.power);
+    const bool has_red_enabled =
+        readBoolField(doc["red_enabled"], out_command.desired_led.red_enabled);
+    const bool has_blue_enabled =
         readBoolField(doc["blue_enabled"], out_command.desired_led.blue_enabled);
-    bool has_far_red_enabled =
+    const bool has_far_red_enabled =
         readBoolField(doc["far_red_enabled"], out_command.desired_led.far_red_enabled);
-    bool has_brightness =
-        readU8Field(doc["brightness_pct"], out_command.desired_led.brightness_pct);
-    bool has_red_pct = readU8Field(doc["red_dist_pct"], out_command.desired_led.red_dist_pct);
-    bool has_blue_pct = readU8Field(doc["blue_dist_pct"], out_command.desired_led.blue_dist_pct);
-    bool has_far_red_pct =
-        readU8Field(doc["far_red_dist_pct"], out_command.desired_led.far_red_dist_pct);
+    const bool has_brightness =
+        readPercentField(doc["brightness_pct"], out_command.desired_led.brightness_pct);
+    const bool has_red_pct =
+        readPercentField(doc["red_dist_pct"], out_command.desired_led.red_dist_pct);
+    const bool has_blue_pct =
+        readPercentField(doc["blue_dist_pct"], out_command.desired_led.blue_dist_pct);
+    const bool has_far_red_pct =
+        readPercentField(doc["far_red_dist_pct"], out_command.desired_led.far_red_dist_pct);
 
     if (!has_power || !has_red_enabled || !has_blue_enabled || !has_far_red_enabled ||
         !has_brightness || !has_red_pct || !has_blue_pct || !has_far_red_pct) {
@@ -148,34 +163,38 @@ bool decodeLedPayload(const uint8_t* payload, uint16_t length, CommandEnvelope& 
         return false;
     }
 
+    if (!isLedStateValid(out_command.desired_led)) {
+        ESP_LOGW(TAG, "led payload invalid");
+        return false;
+    }
+
     return true;
 }
 
 bool decodeConfigPayload(const uint8_t* payload, uint16_t length, CommandEnvelope& out_command) {
-    StaticJsonDocument<COMMAND_DOC_SIZE> doc;
+    StaticJsonDocument<CONFIG_COMMAND_DOC_SIZE> doc;
     char command_id[COMMAND_ID_MAX_LEN] = {};
 
-    bool has_base = decodeBaseDocument(payload, length, doc, command_id, sizeof(command_id));
-    if (!has_base) {
+    if (!decodeBaseDocument(payload, length, doc, command_id, sizeof(command_id))) {
         return false;
     }
 
     setEnvelopeBase(out_command, command_id, CommandKind::CONFIG_UPDATE);
 
-    JsonVariantConst thresholds = doc["thresholds"];
+    const JsonVariantConst thresholds = doc["thresholds"];
     if (thresholds.isNull()) {
         ESP_LOGW(TAG, "thresholds missing");
         return false;
     }
 
-    bool has_temp_min =
+    const bool has_temp_min =
         readFloatField(thresholds["temp_min_c"], out_command.desired_thresholds.temp_min_c);
-    bool has_temp_max =
+    const bool has_temp_max =
         readFloatField(thresholds["temp_max_c"], out_command.desired_thresholds.temp_max_c);
-    bool has_humidity_min = readFloatField(
+    const bool has_humidity_min = readFloatField(
         thresholds["humidity_min_pct"], out_command.desired_thresholds.humidity_min_pct
     );
-    bool has_humidity_max = readFloatField(
+    const bool has_humidity_max = readFloatField(
         thresholds["humidity_max_pct"], out_command.desired_thresholds.humidity_max_pct
     );
 
@@ -184,14 +203,8 @@ bool decodeConfigPayload(const uint8_t* payload, uint16_t length, CommandEnvelop
         return false;
     }
 
-    if (out_command.desired_thresholds.temp_min_c > out_command.desired_thresholds.temp_max_c) {
-        ESP_LOGW(TAG, "temperature thresholds invalid");
-        return false;
-    }
-
-    if (out_command.desired_thresholds.humidity_min_pct >
-        out_command.desired_thresholds.humidity_max_pct) {
-        ESP_LOGW(TAG, "humidity thresholds invalid");
+    if (!isThresholdConfigValid(out_command.desired_thresholds)) {
+        ESP_LOGW(TAG, "threshold payload invalid");
         return false;
     }
 
@@ -199,35 +212,21 @@ bool decodeConfigPayload(const uint8_t* payload, uint16_t length, CommandEnvelop
 }
 
 bool decodeModePayload(const uint8_t* payload, uint16_t length, CommandEnvelope& out_command) {
-    StaticJsonDocument<COMMAND_DOC_SIZE> doc;
+    StaticJsonDocument<MODE_COMMAND_DOC_SIZE> doc;
     char command_id[COMMAND_ID_MAX_LEN] = {};
 
-    bool has_base = decodeBaseDocument(payload, length, doc, command_id, sizeof(command_id));
-    if (!has_base) {
+    if (!decodeBaseDocument(payload, length, doc, command_id, sizeof(command_id))) {
         return false;
     }
 
     setEnvelopeBase(out_command, command_id, CommandKind::MODE_CHANGE);
 
-    bool has_mode = readModeField(doc["mode"], out_command.desired_mode);
-    if (!has_mode) {
-        ESP_LOGW(TAG, "mode invalid");
-        return false;
-    }
-
-    return true;
+    return readModeField(doc["mode"], out_command.desired_mode);
 }
 
 bool enqueueCommand(const CommandEnvelope& command) {
-    if (command_dispatch_queue == nullptr) {
-        ESP_LOGW(TAG, "command queue missing");
-        return false;
-    }
-
-    BaseType_t send_result = xQueueSend(command_dispatch_queue, &command, 0);
-
-    if (send_result != pdTRUE) {
-        ESP_LOGW(TAG, "command queue full");
+    if (!TaskManager::dispatchCommand(command)) {
+        ESP_LOGW(TAG, "command dispatch failed");
         return false;
     }
 
@@ -236,16 +235,14 @@ bool enqueueCommand(const CommandEnvelope& command) {
 }  // namespace
 
 namespace CommandHandler {
-bool init() {
-    if (command_dispatch_queue == nullptr) {
-        ESP_LOGW(TAG, "command queue missing");
+bool init() { return true; }
+
+bool handleInbound(const char* topic, const uint8_t* payload, uint16_t length) {
+    if (topic == nullptr || payload == nullptr || length == 0U) {
+        ESP_LOGW(TAG, "invalid inbound command");
         return false;
     }
 
-    return true;
-}
-
-bool handleInbound(const char* topic, const uint8_t* payload, uint16_t length) {
     CommandEnvelope command = {};
     bool was_decoded = false;
 
@@ -256,7 +253,7 @@ bool handleInbound(const char* topic, const uint8_t* payload, uint16_t length) {
     } else if (endsWith(topic, MQTT_TOPIC_CMD_MODE_SUFFIX)) {
         was_decoded = decodeModePayload(payload, length, command);
     } else {
-        ESP_LOGW(TAG, "unknown command topic");
+        ESP_LOGW(TAG, "unknown command topic: %s", topic);
         return false;
     }
 
