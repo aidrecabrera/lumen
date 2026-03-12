@@ -34,3 +34,16 @@ monitor:
 
 .PHONY: flash-monitor
 flash-monitor: flash monitor
+
+SLIDES_SRC := docs/slides/lumen.md
+SLIDES_OUT := docs
+
+.PHONY: slides slides-html slides-pdf
+
+slides: slides-html slides-pdf
+
+slides-html:
+	bunx --bun @marp-team/marp-cli $(SLIDES_SRC) --html --allow-local-files -o $(SLIDES_OUT)/index.html
+
+slides-pdf:
+	bunx --bun @marp-team/marp-cli $(SLIDES_SRC) --pdf --allow-local-files -o $(SLIDES_OUT)/lumen.pdf
