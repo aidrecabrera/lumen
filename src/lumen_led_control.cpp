@@ -59,10 +59,21 @@ bool isReadingWithinThresholds(const SensorReading& reading, const ThresholdConf
            (reading.humidity_pct <= thresholds.humidity_max_pct);
 }
 
-uint8_t scaleChannel(uint8_t brightness_pct, uint8_t channel_pct) {
-    const uint16_t scaled =
-        static_cast<uint16_t>(brightness_pct) * static_cast<uint16_t>(channel_pct) * 255U;
 
+uint8_t scaleChannel(uint8_t brightness_pct, uint8_t channel_pct) {
+    // fixed: uint16_t -> uint32_t to prevent overflow in intermediate multiply
+    // 100 * 100 * 255 = 2,550,000 which blows past uint16_t max
+    // ref: https://forum.arduino.cc/t/what-is-uint16_t-and-what-is-its-largest-value/209514
+    // this will silently cap output to approx 2% of intended brightness
+    //
+    // before -> after:
+    //   50% bright, 40% ch: 5 -> 51
+    //   50% bright, 25% ch: 3 -> 31
+    //   100% bright, 40% ch: 4 -> 102
+    //   80% bright, 35% ch: 0 -> 71
+    //   1% bright, 1% ch: 0 -> 0 (ok)
+    //   10% bright, 10% ch: 2 -> 2 (ok)
+    const uint32_t scaled = static_cast<uint32_t>(brightness_pct) * static_cast<uint32_t>(channel_pct) * 255U;
     return static_cast<uint8_t>(scaled / 10000U);
 }
 
