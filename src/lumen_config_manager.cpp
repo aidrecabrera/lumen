@@ -25,6 +25,12 @@ struct PersistedRuntimeConfig {
     LedState led;
 };
 
+// catch struct layout changes at compile time if these fire, the blob format
+// has shifted and previously persisted configs will read back as garbage
+static_assert(sizeof(LedState) == 8, "LedState layout changed, NVS blob will break");
+static_assert(sizeof(ThresholdConfig) == 16, "ThresholdConfig layout changed, NVS blob will break");
+static_assert(sizeof(PersistedRuntimeConfig) == 52, "PersistedRuntimeConfig layout changed, NVS blob will break");
+
 static Preferences preferences;
 static RuntimeConfig runtime_config = {};
 static bool is_initialized = false;
