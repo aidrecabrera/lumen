@@ -52,6 +52,15 @@ void test_command_handler_rejects_config_min_greater_than_max();
 void test_command_handler_rejects_mode_missing_mode();
 void test_command_handler_rejects_mode_unsupported_value();
 
+// test_led_scale_channel.cpp
+void test_scale_channel_full_brightness_full_channel();
+void test_scale_channel_default_red();
+void test_scale_channel_default_blue();
+void test_scale_channel_default_far_red();
+void test_scale_channel_zero_brightness();
+void test_scale_channel_zero_channel();
+void test_scale_channel_both_zero();
+
 void setup() {
     Serial.begin(115200);
     delay(1500);
@@ -104,6 +113,18 @@ void setup() {
     RUN_TEST(test_sensors_init_succeeds);
     RUN_TEST(test_sensors_readCurrent_succeeds_and_sequence_increments);
     RUN_TEST(test_sensors_health_true_after_successful_read);
+
+    RUN_TEST(test_led_control_buildStatusMessage_reflects_runtime_state);
+
+    RUN_TEST(test_scale_channel_full_brightness_full_channel);
+    RUN_TEST(test_scale_channel_default_red);
+    RUN_TEST(test_scale_channel_default_blue);
+    RUN_TEST(test_scale_channel_default_far_red);
+    RUN_TEST(test_scale_channel_zero_brightness);
+    RUN_TEST(test_scale_channel_zero_channel);
+    RUN_TEST(test_scale_channel_both_zero);
+
+    RUN_TEST(test_energy_tracker_init_succeeds);
 
     UNITY_END();
 }
