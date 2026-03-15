@@ -72,6 +72,8 @@ void failBoot(const char* reason) {
 }
 }  // namespace
 
+
+#ifndef PIO_UNIT_TESTING
 void setup() {
     Serial.begin(115200);
     delay(100);
@@ -137,3 +139,4 @@ void loop() {
     esp_task_wdt_reset();
     vTaskDelay(pdMS_TO_TICKS(1000));
 }
+#endif

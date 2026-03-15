@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include <unity.h>
+#include <cstring>
 
 #include "lumen_app_types.h"
 #include "lumen_command_handler.h"
