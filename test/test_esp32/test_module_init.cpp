@@ -215,6 +215,23 @@ void test_led_control_buildStatusMessage_reflects_runtime_state() {
     assertLedEqual(desired, status.led);
 }
 
+void test_led_control_autonomous_holds_brightness_outside_thresholds() {
+    prepareLedControl(DeviceMode::AUTONOMOUS);
+    const LedState before = LedControl::getCurrentLedState();
+
+    SensorReading reading{};
+    reading.timestamp_ms = 1U;
+    reading.light_lux = 5000.0f;
+    reading.temperature_c = 35.0f;
+    reading.humidity_pct = 55.0f;
+    reading.sequence = 1U;
+
+    LedControl::controlTick(reading);
+
+    const LedState after = LedControl::getCurrentLedState();
+    assertLedEqual(before, after);
+}
+
 void test_energy_tracker_init_succeeds() {
     prepareEnergyTracker(4.25f);
     const EnergyMessage snapshot = EnergyTracker::getSnapshot();

@@ -3,6 +3,7 @@
 #include <esp_log.h>
 #include <math.h>
 
+#include "lumen_board_config.h"
 #include "lumen_config_manager.h"
 #include "lumen_system_utils.h"
 #include "lumen_type_validation.h"
@@ -19,7 +20,6 @@ static float last_persisted_wh = 0.0f;
 static bool energy_dirty = false;
 static bool is_initialized = false;
 
-static constexpr float FULL_SCALE_POWER_W = 12.0f;
 static constexpr uint32_t MAX_DELTA_MS = 5000U;
 static constexpr float PERSIST_EPSILON_WH = 0.01f;
 
@@ -52,7 +52,7 @@ float computePowerWatts(const LedState& led) {
     const float brightness_ratio = static_cast<float>(led.brightness_pct) / 100.0f;
     const float channel_ratio = static_cast<float>(active_distribution_pct) / 100.0f;
 
-    return FULL_SCALE_POWER_W * brightness_ratio * channel_ratio;
+    return LED_ESTIMATED_FULL_SCALE_POWER_W * brightness_ratio * channel_ratio;
 }
 
 uint32_t clampDeltaMs(uint64_t delta_ms) {
@@ -66,7 +66,7 @@ uint32_t clampDeltaMs(uint64_t delta_ms) {
 
 namespace EnergyTracker {
 bool init() {
-    const RuntimeConfig& config = ConfigManager::getConfig();
+    const RuntimeConfig config = ConfigManager::getConfigSnapshot();
 
     if (!isEnergyTotalValid(config.energy_total_wh)) {
         ESP_LOGE(TAG, "persisted energy invalid");

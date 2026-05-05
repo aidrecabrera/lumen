@@ -43,7 +43,7 @@ void test_config_save_and_readback_mode() {
     TEST_ASSERT_TRUE(ConfigManager::loadDefaults());
     TEST_ASSERT_TRUE(ConfigManager::saveMode(DeviceMode::MANUAL));
 
-    const RuntimeConfig& cfg = ConfigManager::getConfig();
+    const RuntimeConfig cfg = ConfigManager::getConfigSnapshot();
     TEST_ASSERT_EQUAL_UINT8(
         static_cast<uint8_t>(DeviceMode::MANUAL),
         static_cast<uint8_t>(cfg.mode)
@@ -57,7 +57,7 @@ void test_config_save_and_readback_led_state() {
     TEST_ASSERT_TRUE(ConfigManager::loadDefaults());
     TEST_ASSERT_TRUE(ConfigManager::saveLedState(led));
 
-    const RuntimeConfig& cfg = ConfigManager::getConfig();
+    const RuntimeConfig cfg = ConfigManager::getConfigSnapshot();
     assertLedEqual(led, cfg.led);
 }
 
@@ -68,7 +68,7 @@ void test_config_save_and_readback_thresholds() {
     TEST_ASSERT_TRUE(ConfigManager::loadDefaults());
     TEST_ASSERT_TRUE(ConfigManager::saveThresholds(thresholds));
 
-    const RuntimeConfig& cfg = ConfigManager::getConfig();
+    const RuntimeConfig cfg = ConfigManager::getConfigSnapshot();
     assertThresholdsEqual(thresholds, cfg.thresholds);
 }
 
@@ -79,7 +79,7 @@ void test_config_save_and_readback_energy_total() {
     TEST_ASSERT_TRUE(ConfigManager::loadDefaults());
     TEST_ASSERT_TRUE(ConfigManager::saveEnergyTotal(expected_wh));
 
-    const RuntimeConfig& cfg = ConfigManager::getConfig();
+    const RuntimeConfig cfg = ConfigManager::getConfigSnapshot();
     TEST_ASSERT_FLOAT_WITHIN(0.001f, expected_wh, cfg.energy_total_wh);
 }
 
@@ -101,7 +101,7 @@ void test_config_values_survive_reinit_equivalent() {
         "Re-init equivalent failed; full reboot remains a manual checklist item."
     );
 
-    const RuntimeConfig& cfg = ConfigManager::getConfig();
+    const RuntimeConfig cfg = ConfigManager::getConfigSnapshot();
     TEST_ASSERT_EQUAL_UINT8(
         static_cast<uint8_t>(expected_mode),
         static_cast<uint8_t>(cfg.mode)

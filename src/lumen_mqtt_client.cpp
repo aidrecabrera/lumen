@@ -458,7 +458,7 @@ bool init(const char* device_id, Client& net_client, bool (*wifi_connected)()) {
     }
 
     broker_client.setClient(*network_client);
-    broker_client.setServer(MQTT_BROKER_IP, MQTT_BROKER_PORT);
+    broker_client.setServer(MQTT_BROKER_HOST, MQTT_BROKER_PORT);
     broker_client.setKeepAlive(MQTT_KEEPALIVE_SEC);
     broker_client.setCallback(mqttCallback);
 

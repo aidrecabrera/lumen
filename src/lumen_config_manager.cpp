@@ -4,6 +4,8 @@
 #include <esp_err.h>
 #include <esp_log.h>
 #include <esp_mac.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -29,12 +31,38 @@ struct PersistedRuntimeConfig {
 // has shifted and previously persisted configs will read back as garbage
 static_assert(sizeof(LedState) == 8, "LedState layout changed, NVS blob will break");
 static_assert(sizeof(ThresholdConfig) == 16, "ThresholdConfig layout changed, NVS blob will break");
-static_assert(sizeof(PersistedRuntimeConfig) == 52, "PersistedRuntimeConfig layout changed, NVS blob will break");
+static_assert(
+    sizeof(PersistedRuntimeConfig) == 52,
+    "PersistedRuntimeConfig layout changed, NVS blob will break"
+);
 
 static Preferences preferences;
 static RuntimeConfig runtime_config = {};
 static bool is_initialized = false;
 static bool has_nvs = false;
+static StaticSemaphore_t config_mutex_storage;
+static SemaphoreHandle_t config_mutex = nullptr;
+
+bool ensureConfigMutex() {
+    if (config_mutex != nullptr) {
+        return true;
+    }
+
+    config_mutex = xSemaphoreCreateMutexStatic(&config_mutex_storage);
+    return config_mutex != nullptr;
+}
+
+void lockConfig() {
+    if (ensureConfigMutex()) {
+        xSemaphoreTake(config_mutex, portMAX_DELAY);
+    }
+}
+
+void unlockConfig() {
+    if (config_mutex != nullptr) {
+        xSemaphoreGive(config_mutex);
+    }
+}
 
 ThresholdConfig buildDefaultThresholds() {
     ThresholdConfig thresholds = {};
@@ -207,12 +235,19 @@ void loadEnergyTotal(RuntimeConfig& config) {
 
 namespace ConfigManager {
 bool init() {
+    if (!ensureConfigMutex()) {
+        ESP_LOGE(TAG, "config mutex create failed");
+        return false;
+    }
+
+    lockConfig();
     applyDefaultConfig(runtime_config);
 
     has_nvs = preferences.begin(NVS_NAMESPACE, false);
     if (!has_nvs) {
         ESP_LOGE(TAG, "nvs open failed, running with defaults");
         is_initialized = true;
+        unlockConfig();
         return false;
     }
 
@@ -221,23 +256,33 @@ bool init() {
 
     is_initialized = true;
     ESP_LOGI(TAG, "config loaded for %s", runtime_config.device_id);
+    unlockConfig();
     return true;
 }
 
 bool loadDefaults() {
+    lockConfig();
     applyDefaultConfig(runtime_config);
 
     if (!has_nvs) {
         ESP_LOGW(TAG, "defaults applied in ram only");
+        unlockConfig();
         return false;
     }
 
     bool ok = writeRuntimeConfigBlob(runtime_config);
     ok &= writeEnergyTotal(runtime_config.energy_total_wh);
+    unlockConfig();
     return ok;
 }
 
-const RuntimeConfig& getConfig() { return runtime_config; }
+RuntimeConfig getConfigSnapshot() {
+    RuntimeConfig snapshot = {};
+    lockConfig();
+    snapshot = runtime_config;
+    unlockConfig();
+    return snapshot;
+}
 
 bool saveThresholds(const ThresholdConfig& thresholds) {
     if (!isThresholdConfigValid(thresholds)) {
@@ -245,26 +290,32 @@ bool saveThresholds(const ThresholdConfig& thresholds) {
         return false;
     }
 
+    lockConfig();
     RuntimeConfig next = runtime_config;
     next.thresholds = thresholds;
 
     if (!writeRuntimeConfigBlob(next)) {
+        unlockConfig();
         return false;
     }
 
     runtime_config.thresholds = thresholds;
+    unlockConfig();
     return true;
 }
 
 bool saveMode(DeviceMode mode) {
+    lockConfig();
     RuntimeConfig next = runtime_config;
     next.mode = mode;
 
     if (!writeRuntimeConfigBlob(next)) {
+        unlockConfig();
         return false;
     }
 
     runtime_config.mode = mode;
+    unlockConfig();
     return true;
 }
 
@@ -274,14 +325,17 @@ bool saveLedState(const LedState& led) {
         return false;
     }
 
+    lockConfig();
     RuntimeConfig next = runtime_config;
     next.led = led;
 
     if (!writeRuntimeConfigBlob(next)) {
+        unlockConfig();
         return false;
     }
 
     runtime_config.led = led;
+    unlockConfig();
     return true;
 }
 
@@ -291,11 +345,14 @@ bool saveEnergyTotal(float total_wh) {
         return false;
     }
 
+    lockConfig();
     if (!writeEnergyTotal(total_wh)) {
+        unlockConfig();
         return false;
     }
 
     runtime_config.energy_total_wh = total_wh;
+    unlockConfig();
     return true;
 }
 
@@ -305,18 +362,21 @@ bool saveRuntimeConfig(const RuntimeConfig& config) {
         return false;
     }
 
+    lockConfig();
     RuntimeConfig next = runtime_config;
     next.mode = config.mode;
     next.thresholds = config.thresholds;
     next.led = config.led;
 
     if (!writeRuntimeConfigBlob(next)) {
+        unlockConfig();
         return false;
     }
 
     runtime_config.mode = next.mode;
     runtime_config.thresholds = next.thresholds;
     runtime_config.led = next.led;
+    unlockConfig();
     return true;
 }
 }  // namespace ConfigManager

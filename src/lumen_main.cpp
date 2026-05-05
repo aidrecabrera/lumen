@@ -72,7 +72,6 @@ void failBoot(const char* reason) {
 }
 }  // namespace
 
-
 #ifndef PIO_UNIT_TESTING
 void setup() {
     Serial.begin(115200);
@@ -110,7 +109,7 @@ void setup() {
     }
     esp_task_wdt_reset();
 
-    const RuntimeConfig& config = ConfigManager::getConfig();
+    const RuntimeConfig config = ConfigManager::getConfigSnapshot();
     if (!MqttClient::init(config.device_id)) {
         failBoot("mqtt");
     }

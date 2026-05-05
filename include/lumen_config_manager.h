@@ -6,7 +6,7 @@ namespace ConfigManager {
 
 bool init();
 bool loadDefaults();
-const RuntimeConfig& getConfig();
+RuntimeConfig getConfigSnapshot();
 bool saveThresholds(const ThresholdConfig& thresholds);
 bool saveMode(DeviceMode mode);
 bool saveLedState(const LedState& led);

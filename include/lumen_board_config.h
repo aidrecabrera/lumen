@@ -35,8 +35,16 @@ static constexpr uint8_t QUEUE_STATUS_LENGTH = 4;
 static constexpr uint8_t QUEUE_ENERGY_LENGTH = 4;
 static constexpr uint8_t QUEUE_ACK_LENGTH = 8;
 
-static constexpr const char* MQTT_BROKER_IP = "192.168.1.50";
-static constexpr uint16_t MQTT_BROKER_PORT = 1883;
+#ifndef LUMEN_MQTT_BROKER_HOST
+#define LUMEN_MQTT_BROKER_HOST "192.168.1.50"
+#endif
+
+#ifndef LUMEN_MQTT_BROKER_PORT
+#define LUMEN_MQTT_BROKER_PORT 1883
+#endif
+
+static constexpr const char* MQTT_BROKER_HOST = LUMEN_MQTT_BROKER_HOST;
+static constexpr uint16_t MQTT_BROKER_PORT = LUMEN_MQTT_BROKER_PORT;
 
 static constexpr const char* MQTT_TOPIC_ROOT = "lumen";
 static constexpr const char* MQTT_TOPIC_AVAILABILITY_SUFFIX = "availability";
@@ -69,3 +77,9 @@ static constexpr uint8_t REBOOT_THRESHOLD = 3;
 // Autonomous LED control: lux level at which brightness reaches zero.
 // Increase to keep LEDs on longer under bright ambient light.
 static constexpr float AUTONOMOUS_LUX_CEILING = 10000.0f;
+
+#ifndef LUMEN_LED_ESTIMATED_FULL_SCALE_POWER_W
+#define LUMEN_LED_ESTIMATED_FULL_SCALE_POWER_W 12.0f
+#endif
+
+static constexpr float LED_ESTIMATED_FULL_SCALE_POWER_W = LUMEN_LED_ESTIMATED_FULL_SCALE_POWER_W;

@@ -59,7 +59,6 @@ bool isReadingWithinThresholds(const SensorReading& reading, const ThresholdConf
            (reading.humidity_pct <= thresholds.humidity_max_pct);
 }
 
-
 uint8_t scaleChannel(uint8_t brightness_pct, uint8_t channel_pct) {
     // fixed: uint16_t -> uint32_t to prevent overflow in intermediate multiply
     // 100 * 100 * 255 = 2,550,000 which blows past uint16_t max
@@ -73,7 +72,8 @@ uint8_t scaleChannel(uint8_t brightness_pct, uint8_t channel_pct) {
     //   80% bright, 35% ch: 0 -> 71
     //   1% bright, 1% ch: 0 -> 0 (ok)
     //   10% bright, 10% ch: 2 -> 2 (ok)
-    const uint32_t scaled = static_cast<uint32_t>(brightness_pct) * static_cast<uint32_t>(channel_pct) * 255U;
+    const uint32_t scaled =
+        static_cast<uint32_t>(brightness_pct) * static_cast<uint32_t>(channel_pct) * 255U;
     return static_cast<uint8_t>(scaled / 10000U);
 }
 
@@ -132,14 +132,14 @@ void applyToHardware(const LedState& led) {
 }
 
 void loadPersistedState() {
-    const RuntimeConfig& config = ConfigManager::getConfig();
+    const RuntimeConfig config = ConfigManager::getConfigSnapshot();
     current_mode = config.mode;
     current_led = config.led;
     current_thresholds = config.thresholds;
 }
 
 bool persistRuntimeState(DeviceMode mode, const LedState& led, const ThresholdConfig& thresholds) {
-    RuntimeConfig config = ConfigManager::getConfig();
+    RuntimeConfig config = ConfigManager::getConfigSnapshot();
     config.mode = mode;
     config.led = led;
     config.thresholds = thresholds;
@@ -333,10 +333,12 @@ void controlTick(const SensorReading& latest_reading) {
         return;
     }
 
-    uint8_t next_brightness_pct = 0U;
-    if (isReadingWithinThresholds(latest_reading, thresholds_snapshot)) {
-        next_brightness_pct = computeAutonomousBrightness(latest_reading.light_lux);
+    if (!isReadingWithinThresholds(latest_reading, thresholds_snapshot)) {
+        ESP_LOGW(TAG, "autonomous reading outside thresholds, holding brightness");
+        return;
     }
+
+    const uint8_t next_brightness_pct = computeAutonomousBrightness(latest_reading.light_lux);
 
     if (next_brightness_pct == led_snapshot.brightness_pct) {
         return;
