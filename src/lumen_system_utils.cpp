@@ -1,10 +1,20 @@
 #include "lumen_system_utils.h"
 
-#include <esp_timer.h>
 #include <string.h>
 
+#if defined(ESP_PLATFORM)
+#include <esp_timer.h>
+#else
+#include <chrono>
+#endif
+
 bool copyText(char* dest, size_t dest_len, const char* src) {
-    if (dest == nullptr || dest_len == 0U || src == nullptr) {
+    if (dest == nullptr || dest_len == 0U) {
+        return false;
+    }
+
+    if (src == nullptr) {
+        dest[0] = '\0';
         return false;
     }
 
@@ -34,4 +44,13 @@ bool endsWith(const char* text, const char* suffix) {
     return strcmp(text + text_len - suffix_len, suffix) == 0;
 }
 
-uint64_t getNowMs() { return static_cast<uint64_t>(esp_timer_get_time() / 1000ULL); }
+uint64_t getNowMs() {
+#if defined(ESP_PLATFORM)
+    return static_cast<uint64_t>(esp_timer_get_time() / 1000ULL);
+#else
+    const auto now = std::chrono::steady_clock::now().time_since_epoch();
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(now).count()
+    );
+#endif
+}
