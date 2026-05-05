@@ -1,0 +1,1300 @@
+<!doctype html>
+<html lang="en" data-bs-theme="light">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="color-scheme" content="light dark" />
+    <title>SPOT - Smart Photomorphogenic Optimization Technology</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.2/src/regular/style.css" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="manifest" href="/site.webmanifest">
+    <style>
+        :root {
+            --transition-speed: 300ms;
+        }
+
+        body {
+            min-height: 100vh;
+            transition: background-color var(--transition-speed);
+        }
+
+        .header-brand {
+            font-weight: 700;
+            letter-spacing: 0;
+        }
+
+        .notification-badge {
+            min-width: 16px;
+            height: 16px;
+            font-size: 0.7rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            padding: 0;
+        }
+
+        .sensor-card {
+            transition: transform var(--transition-speed), box-shadow var(--transition-speed);
+        }
+
+        .sensor-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.1);
+        }
+
+        .sensor-value {
+            font-size: 2rem;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+
+        .sensor-label {
+            font-size: 0.875rem;
+            opacity: 0.8;
+        }
+
+        .sensor-icon {
+            font-size: 2rem;
+            opacity: 0.8;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 250px;
+            width: 100%;
+        }
+
+        .chart-container-sm {
+            height: 180px;
+        }
+
+        .chart-container-lg {
+            height: 300px;
+        }
+
+        .color-picker-wrapper {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 1rem;
+        }
+
+        #colorPickerContainer {
+            touch-action: none;
+        }
+
+        .stepper-control {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .stepper-btn {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all var(--transition-speed);
+        }
+
+        .stepper-value {
+            min-width: 60px;
+            text-align: center;
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+
+        .form-switch .form-check-input {
+            width: 3rem;
+            height: 1.5rem;
+            cursor: pointer;
+        }
+
+        .wavelength-badge {
+            padding: 0.5rem 1rem;
+            border-radius: 2rem;
+            font-weight: 500;
+            transition: all var(--transition-speed);
+        }
+
+        .alert-item {
+            border-left: 4px solid;
+            transition: background-color var(--transition-speed);
+        }
+
+        .alert-item:hover {
+            background-color: rgba(0, 0, 0, 0.02);
+        }
+
+        .alert-item.alert-critical {
+            border-left-color: var(--bs-danger);
+        }
+
+        .alert-item.alert-warning {
+            border-left-color: var(--bs-warning);
+        }
+
+        .alert-item.alert-info {
+            border-left-color: var(--bs-info);
+        }
+
+        .energy-period {
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+            margin-bottom: 0.5rem;
+            transition: background-color var(--transition-speed);
+        }
+
+        .energy-period:hover {
+            background-color: rgba(0, 0, 0, 0.03);
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        .status-dot.online {
+            background-color: var(--bs-success);
+        }
+
+        .status-dot.warning {
+            background-color: var(--bs-warning);
+        }
+
+        .status-dot.offline {
+            background-color: var(--bs-danger);
+        }
+
+        .loading-spinner {
+            width: 1rem;
+            height: 1rem;
+            border: 2px solid currentColor;
+            border-right-color: transparent;
+            border-radius: 50%;
+            animation: spin 0.75s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .spectrum-preview {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: 3px solid var(--bs-border-color);
+            transition: all var(--transition-speed);
+        }
+
+        .control-disabled {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+
+        @media (max-width: 767.98px) {
+            .sensor-value {
+                font-size: 1.5rem;
+            }
+
+            .sensor-icon {
+                font-size: 1.5rem;
+            }
+
+            .chart-container {
+                height: 200px;
+            }
+        }
+
+        @media (min-width: 992px) {
+            .sidebar-sticky {
+                position: sticky;
+                top: 1rem;
+            }
+        }
+
+        .btn:focus-visible,
+        .form-control:focus-visible,
+        .form-check-input:focus-visible {
+            outline: 2px solid var(--bs-primary);
+            outline-offset: 2px;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        .modal-backdrop.show {
+            opacity: 0.5;
+        }
+
+        .toast-container {
+            z-index: 1080;
+        }
+
+        .empty-state {
+            padding: 2rem;
+            text-align: center;
+            opacity: 0.7;
+        }
+
+        .progress-thin {
+            height: 4px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="toast-container position-fixed top-0 end-0 p-3" id="toastContainer"></div>
+    <header class="sticky-top bg-body border-bottom shadow-sm">
+        <div class="container-fluid py-2">
+            <div class="d-flex justify-content-between align-items-center">
+                <div class="d-flex align-items-center gap-2"><i class="ph ph-plant fs-3 text-success"></i>
+                    <div>
+                        <h1 class="h5 mb-0 header-brand">SPOT</h1><small class="text-muted d-none d-sm-block">Smart Photomorphogenic Optimization</small>
+                    </div>
+                </div>
+                <div class="d-flex align-items-center gap-2 gap-md-3">
+                    <div class="d-none d-md-flex align-items-center gap-2"><span class="status-dot online" id="connectionStatus"></span><small class="text-muted">Connected</small></div>
+                    <div class="d-none d-lg-block"><small class="text-muted"><i class="ph ph-clock me-1"></i><span id="lastUpdate">--:--:--</span></small></div><button class="btn btn-outline-secondary position-relative" type="button" data-bs-toggle="offcanvas" data-bs-target="#alertsOffcanvas" aria-label="Notifications"><i class="ph ph-bell fs-5"></i><span class="badge bg-danger notification-badge" id="alertBadge">0</span></button><button class="btn btn-outline-secondary" type="button" data-bs-toggle="offcanvas" data-bs-target="#settingsOffcanvas" aria-label="Settings"><i class="ph ph-gear fs-5"></i></button>
+                </div>
+            </div>
+        </div>
+    </header>
+    <main class="container-fluid py-3 py-md-4">
+        <div class="row g-3 g-lg-4">
+            <div class="col-12 col-lg-8">
+                <div class="card mb-3 mb-lg-4">
+                    <div class="card-body">
+                        <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+                            <div class="d-flex align-items-center gap-3">
+                                <div class="form-check form-switch mb-0"><input class="form-check-input" type="checkbox" role="switch" id="modeToggle" checked aria-label="Toggle Adaptive Light Control" /></div>
+                                <div>
+                                    <h6 class="mb-0">Enable Adaptive Light Control</h6><small class="text-muted">System automatically optimizes lighting</small>
+                                </div>
+                            </div>
+                            <div class="d-flex align-items-center gap-2"><span class="badge bg-success" id="modeBadge"><i class="ph ph-robot me-1"></i>Autonomous </span>
+                                <div class="loading-spinner text-muted d-none" id="modeLoader"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row g-3 mb-3 mb-lg-4">
+                    <div class="col-6 col-md-3">
+                        <div class="card sensor-card h-100">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <p class="sensor-label text-muted mb-1">Light Intensity</p>
+                                        <p class="sensor-value mb-0" id="lightValue">--</p><small class="text-muted">lux</small>
+                                    </div><i class="ph ph-sun sensor-icon text-warning"></i>
+                                </div>
+                                <div class="progress progress-thin mt-2">
+                                    <div class="progress-bar bg-warning" id="lightProgress" style="width: 0%"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="card sensor-card h-100">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <p class="sensor-label text-muted mb-1">Temperature</p>
+                                        <p class="sensor-value mb-0" id="tempValue">--</p><small class="text-muted">°C</small>
+                                    </div><i class="ph ph-thermometer sensor-icon text-danger"></i>
+                                </div><span class="badge mt-2" id="tempStatus">--</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="card sensor-card h-100">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <p class="sensor-label text-muted mb-1">Humidity</p>
+                                        <p class="sensor-value mb-0" id="humidityValue">--</p><small class="text-muted">%</small>
+                                    </div><i class="ph ph-drop sensor-icon text-info"></i>
+                                </div><span class="badge mt-2" id="humidityStatus">--</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="card sensor-card h-100">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <p class="sensor-label text-muted mb-1">Energy</p>
+                                        <p class="sensor-value mb-0" id="energyValue">--</p><small class="text-muted">kWh</small>
+                                    </div><i class="ph ph-lightning sensor-icon text-primary"></i>
+                                </div><small class="text-success" id="energySavings"><i class="ph ph-trend-down me-1"></i>-- saved </small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card mb-3 mb-lg-4">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h6 class="mb-0"><i class="ph ph-lightbulb me-2"></i>LED System Status</h6>
+                        <div class="form-check form-switch mb-0"><input class="form-check-input" type="checkbox" role="switch" id="masterPower" checked aria-label="Master Power Switch" /><label class="form-check-label small" for="masterPower">Power</label></div>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3 align-items-center">
+                            <div class="col-auto">
+                                <div class="spectrum-preview" id="spectrumPreview" style="background: linear-gradient(135deg, #ff6b6b, #4ecdc4)"></div>
+                            </div>
+                            <div class="col">
+                                <div class="d-flex flex-wrap gap-2 align-items-center"><span class="badge bg-success" id="ledPowerStatus">ON</span><span class="badge bg-secondary"><i class="ph ph-sun-dim me-1"></i><span id="ledBrightness">50</span>% </span><span class="badge bg-secondary" id="activeWavelengths">R+B+FR</span></div>
+                            </div>
+                            <div class="col-12 col-md-auto">
+                                <div class="d-flex gap-2">
+                                    <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" id="redWavelength" checked /><label class="form-check-label small text-danger" for="redWavelength">Red</label></div>
+                                    <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" id="blueWavelength" checked /><label class="form-check-label small text-primary" for="blueWavelength">Blue</label></div>
+                                    <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" id="farRedWavelength" checked /><label class="form-check-label small text-secondary" for="farRedWavelength">Far-Red</label></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card mb-3 mb-lg-4">
+                    <div class="card-header">
+                        <ul class="nav nav-tabs card-header-tabs" id="chartTabs" role="tablist">
+                            <li class="nav-item" role="presentation"><button class="nav-link active" id="usage-tab" data-bs-toggle="tab" data-bs-target="#usage-tab-pane" type="button" role="tab"><i class="ph ph-chart-line me-2"></i>Light Usage </button></li>
+                            <li class="nav-item" role="presentation"><button class="nav-link" id="env-tab" data-bs-toggle="tab" data-bs-target="#env-tab-pane" type="button" role="tab"><i class="ph ph-thermometer me-2"></i>Environment </button></li>
+                            <li class="nav-item" role="presentation"><button class="nav-link" id="energy-tab" data-bs-toggle="tab" data-bs-target="#energy-tab-pane" type="button" role="tab"><i class="ph ph-lightning me-2"></i>Energy </button></li>
+                        </ul>
+                    </div>
+                    <div class="card-body">
+                        <div class="tab-content" id="chartTabsContent">
+                            <div class="tab-pane fade show active" id="usage-tab-pane" role="tabpanel" tabindex="0">
+                                <div class="chart-container chart-container-lg"><canvas id="lightUsageChart"></canvas></div>
+                            </div>
+                            <div class="tab-pane fade" id="env-tab-pane" role="tabpanel" tabindex="0">
+                                <div class="chart-container chart-container-lg"><canvas id="tempHumidityChart"></canvas></div>
+                            </div>
+                            <div class="tab-pane fade" id="energy-tab-pane" role="tabpanel" tabindex="0">
+                                <div class="row">
+                                    <div class="col-12 col-md-6 mb-3">
+                                        <h6 class="text-muted small text-center mb-2">Hourly Consumption</h6>
+                                        <div class="chart-container chart-container-sm"><canvas id="energyBreakdownChart"></canvas></div>
+                                    </div>
+                                    <div class="col-12 col-md-6 mb-3">
+                                        <h6 class="text-muted small text-center mb-2">Daily Comparison</h6>
+                                        <div class="chart-container chart-container-sm"><canvas id="dailyEnergyChart"></canvas></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row g-3">
+                    <div class="col-12 col-md-6">
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h6 class="mb-0"><i class="ph ph-lightning me-2"></i>Consumption Breakdown</h6>
+                            </div>
+                            <div class="card-body">
+                                <div id="energyBreakdown"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h6 class="mb-0"><i class="ph ph-chart-pie me-2"></i>LED Statistics</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="row g-3">
+                                    <div class="col-6">
+                                        <p class="small text-muted mb-2 text-center">ON/OFF Time</p>
+                                        <div class="chart-container chart-container-sm"><canvas id="ledOnOffChart"></canvas></div>
+                                    </div>
+                                    <div class="col-6">
+                                        <p class="small text-muted mb-2 text-center">Wavelength Usage</p>
+                                        <div class="chart-container chart-container-sm"><canvas id="wavelengthChart"></canvas></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-lg-4">
+                <div class="sidebar-sticky">
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h6 class="mb-0"><i class="ph ph-lightning-slash me-2"></i>Quick Actions</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="d-grid gap-2"><button class="btn btn-outline-success" id="optimizeBtn"><i class="ph ph-plant me-2"></i>Optimize for Growth </button><button class="btn btn-outline-secondary" id="nightModeBtn"><i class="ph ph-moon me-2"></i>Night Mode </button></div>
+                        </div>
+                    </div>
+                    <div class="card mb-3">
+                        <div class="card-body text-center"><i class="ph ph-clock-countdown fs-1 text-primary mb-2"></i>
+                            <h6 class="text-muted mb-1">Time of Lights On</h6>
+                            <p class="display-6 fw-bold mb-0" id="lightDuration">0</p><small class="text-muted">Hours at max lighting</small>
+                        </div>
+                    </div>
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h6 class="mb-0"><i class="ph ph-palette me-2"></i>Light Spectrum</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="color-picker-wrapper" id="colorPickerWrapper">
+                                <div id="colorPickerContainer"></div>
+                            </div>
+                            <div class="mt-3 mb-3">
+                                <div class="d-flex justify-content-between small text-muted mb-1"><span>Wavelength Distribution</span></div>
+                                <div class="progress" style="height: 10px">
+                                    <div class="progress-bar bg-danger" id="distRed" role="progressbar" style="width: 40%"></div>
+                                    <div class="progress-bar bg-primary" id="distBlue" role="progressbar" style="width: 35%"></div>
+                                    <div class="progress-bar bg-secondary" id="distFarRed" role="progressbar" style="width: 25%"></div>
+                                </div>
+                            </div>
+                            <div class="text-center mt-3">
+                                <div class="d-flex justify-content-center align-items-center gap-2 mb-2"><span class="small text-muted">Selected:</span><span class="badge bg-secondary" id="colorValue">#FF0000</span></div>
+                                <div class="d-flex justify-content-center gap-2" id="wavelengthIndicators"><span class="wavelength-badge bg-danger-subtle text-danger" id="redIndicator"><i class="ph ph-wave-sine me-1"></i>Red</span><span class="wavelength-badge bg-primary-subtle text-primary" id="blueIndicator"><i class="ph ph-wave-sine me-1"></i>Blue</span><span class="wavelength-badge bg-secondary-subtle text-secondary" id="farRedIndicator"><i class="ph ph-wave-sine me-1"></i>Far-Red</span></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card mb-3" id="intensityControlCard">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h6 class="mb-0"><i class="ph ph-sun-dim me-2"></i>Light Intensity</h6><span class="badge bg-info" id="intensityModeLabel">Auto</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="d-flex justify-content-center align-items-center">
+                                <div class="stepper-control" id="intensityStepper"><button class="btn btn-outline-secondary stepper-btn" id="decreaseIntensity" aria-label="Decrease intensity"><i class="ph ph-minus"></i></button>
+                                    <div class="stepper-value" id="intensityValue">50</div><button class="btn btn-outline-secondary stepper-btn" id="increaseIntensity" aria-label="Increase intensity"><i class="ph ph-plus"></i></button>
+                                </div>
+                            </div>
+                            <div class="text-center mt-2"><small class="text-muted">Brightness Level (%)</small></div>
+                            <div class="alert alert-warning mt-3 mb-0 d-none" id="intensityWarning"><i class="ph ph-warning me-2"></i><small>Manual intensity may not be optimal for current conditions.</small></div>
+                        </div>
+                    </div>
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h6 class="mb-0"><i class="ph ph-chart-bar me-2"></i>Summary Statistics</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="row g-2">
+                                <div class="col-6">
+                                    <div class="bg-body-secondary rounded p-2 text-center"><small class="text-muted d-block">Avg Light</small><strong id="avgLight">-- lux</strong></div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="bg-body-secondary rounded p-2 text-center"><small class="text-muted d-block">Energy Saved</small><strong id="totalEnergySaved">-- kWh</strong></div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="bg-body-secondary rounded p-2 text-center"><small class="text-muted d-block">Optimal Hours</small><strong id="optimalHours">--h</strong></div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="bg-body-secondary rounded p-2 text-center"><small class="text-muted d-block">Score</small><strong id="optimizationScore">--%</strong></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <h6 class="mb-0"><i class="ph ph-sliders me-2"></i>System Controls</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="d-grid gap-2"><button class="btn btn-outline-primary" id="exportDataBtn"><i class="ph ph-download me-2"></i>Export Data (CSV) </button><button class="btn btn-outline-secondary" id="resetBtn"><i class="ph ph-arrow-counter-clockwise me-2"></i>Reset to Defaults </button></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+    <div class="offcanvas offcanvas-end" tabindex="-1" id="alertsOffcanvas" aria-labelledby="alertsOffcanvasLabel">
+        <div class="offcanvas-header">
+            <h5 class="offcanvas-title" id="alertsOffcanvasLabel"><i class="ph ph-bell me-2"></i>Notifications</h5><button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+        </div>
+        <div class="offcanvas-body">
+            <div class="d-flex justify-content-between align-items-center mb-3"><small class="text-muted" id="alertCount">0 alerts</small><button class="btn btn-sm btn-outline-danger" id="clearAlertsBtn"><i class="ph ph-trash me-1"></i>Clear All </button></div>
+            <div id="alertsList">
+                <div class="empty-state"><i class="ph ph-check-circle fs-1 text-success"></i>
+                    <p class="mt-2 mb-0">All systems optimal</p><small class="text-muted">No alerts at this time</small>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="offcanvas offcanvas-end" tabindex="-1" id="settingsOffcanvas" aria-labelledby="settingsOffcanvasLabel">
+        <div class="offcanvas-header">
+            <h5 class="offcanvas-title" id="settingsOffcanvasLabel"><i class="ph ph-gear me-2"></i>Settings</h5><button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+        </div>
+        <div class="offcanvas-body">
+            <div class="mb-4">
+                <h6 class="text-muted mb-3">Appearance</h6>
+                <div class="form-check form-switch d-flex justify-content-between align-items-center py-2"><label class="form-check-label" for="darkModeToggle"><i class="ph ph-moon me-2"></i>Dark Mode </label><input class="form-check-input" type="checkbox" role="switch" id="darkModeToggle" /></div>
+            </div>
+            <div class="mb-4">
+                <h6 class="text-muted mb-3">Automation Rules</h6>
+                <div class="form-check mb-2"><input class="form-check-input" type="checkbox" id="autoAdjustSpectrum" checked /><label class="form-check-label small" for="autoAdjustSpectrum">Auto-adjust spectrum phase</label></div>
+                <div class="form-check mb-2"><input class="form-check-input" type="checkbox" id="nightModeAuto" checked /><label class="form-check-label small" for="nightModeAuto">Enable night mode (10pm - 6am)</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" id="energySaveMode" /><label class="form-check-label small" for="energySaveMode">Energy saving mode</label></div>
+            </div>
+            <div class="mb-4">
+                <h6 class="text-muted mb-3">Alert Thresholds</h6>
+                <div class="mb-3"><label class="form-label small">Temperature Range (°C)</label>
+                    <div class="row g-2">
+                        <div class="col-6"><input type="number" class="form-control form-control-sm" id="tempMin" value="18" min="0" max="50" /><small class="text-muted">Min</small></div>
+                        <div class="col-6"><input type="number" class="form-control form-control-sm" id="tempMax" value="28" min="0" max="50" /><small class="text-muted">Max</small></div>
+                    </div>
+                </div>
+                <div class="mb-3"><label class="form-label small">Humidity Range (%)</label>
+                    <div class="row g-2">
+                        <div class="col-6"><input type="number" class="form-control form-control-sm" id="humidityMin" value="60" min="0" max="100" /><small class="text-muted">Min</small></div>
+                        <div class="col-6"><input type="number" class="form-control form-control-sm" id="humidityMax" value="80" min="0" max="100" /><small class="text-muted">Max</small></div>
+                    </div>
+                </div><button class="btn btn-sm btn-primary w-100" id="saveThresholdsBtn"><i class="ph ph-check me-1"></i>Save Thresholds </button>
+            </div>
+            <div class="mb-4">
+                <h6 class="text-muted mb-3">System Information</h6>
+                <div class="bg-body-secondary rounded p-3">
+                    <div class="d-flex justify-content-between mb-2"><small class="text-muted">Device ID</small><small class="font-monospace">SPOT-ESP32-001</small></div>
+                    <div class="d-flex justify-content-between mb-2"><small class="text-muted">Firmware</small><small class="font-monospace">v2.4.1</small></div>
+                    <div class="d-flex justify-content-between"><small class="text-muted">Uptime</small><small id="systemUptime">0d 0h 0m</small></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.9/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@jaames/iro@5.5.2/dist/iro.min.js"></script>
+    <script>
+        const appState = {
+            sensors: {
+                light: 5000,
+                temperature: 24,
+                humidity: 68,
+            },
+            led: {
+                power: true,
+                brightness: 50,
+                selectedColor: "#ff0000",
+                wavelengths: {
+                    red: true,
+                    blue: true,
+                    farRed: true,
+                },
+                distribution: {
+                    red: 40,
+                    blue: 35,
+                    farRed: 25,
+                },
+            },
+            mode: "autonomous",
+            energy: {
+                current: 0,
+                total: 0,
+                saved: 0,
+                hourlyBreakdown: [],
+                lightOnHours: 0,
+                maxLightingHours: 0,
+                dailyComparison: [3.2, 4.1, 3.8],
+            },
+            history: {
+                light: [],
+                temperature: [],
+                humidity: [],
+                lightUsage: [],
+                timestamps: [],
+            },
+            alerts: [],
+            alertIdCounter: 0,
+            settings: {
+                darkMode: false,
+                tempThreshold: {
+                    min: 18,
+                    max: 28
+                },
+                humidityThreshold: {
+                    min: 60,
+                    max: 80
+                },
+                automation: {
+                    autoAdjustSpectrum: true,
+                    nightModeAuto: true,
+                    energySaveMode: false,
+                },
+            },
+            simulation: {
+                startTime: Date.now(),
+                updateInterval: 3000,
+            },
+            stats: {
+                avgLight: 0,
+                totalEnergySaved: 0,
+                optimalHours: 0,
+                optimizationScore: 85,
+            },
+        };
+        let charts = {
+            lightUsage: null,
+            tempHumidity: null,
+            ledOnOff: null,
+            wavelength: null,
+            energyBreakdown: null,
+            dailyEnergy: null,
+        };
+        let colorPicker = null;
+        let updateInterval = null;
+
+        function clamp(value, min, max) {
+            return Math.min(max, Math.max(min, value));
+        }
+
+        function escapeHTML(value) {
+            return String(value).replace(/[&<>"']/g, (char) => ({
+                "&": "&amp;",
+                "<": "&lt;",
+                ">": "&gt;",
+                '"': "&quot;",
+                "'": "&#39;",
+            }[char]));
+        }
+
+        function formatClockTime(timestamp) {
+            return new Date(timestamp).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+            });
+        }
+
+        function assertDependency(name, value) {
+            if (!value) {
+                throw new Error(`${name} failed to load`);
+            }
+        }
+
+        document.addEventListener("DOMContentLoaded", function() {
+            try {
+                assertDependency("Bootstrap", window.bootstrap);
+                assertDependency("Chart.js", window.Chart);
+                assertDependency("iro", window.iro);
+                initializeHistoricalData();
+                initializeColorPicker();
+                initializeCharts();
+                setupEventListeners();
+                startSimulation();
+                updateModeUI();
+                updateUI();
+            } catch (error) {
+                renderFatalError(error);
+            }
+        });
+
+        window.addEventListener("beforeunload", function() {
+            if (updateInterval) {
+                clearInterval(updateInterval);
+            }
+        });
+
+        function initializeHistoricalData() {
+            const now = Date.now();
+            for (let i = 24; i >= 0; i--) {
+                const timestamp = now - i * 3600000;
+                const hour = new Date(timestamp).getHours();
+                const dayFactor = Math.sin(((hour - 6) * Math.PI) / 12);
+                const lightValue = Math.max(0, Math.min(10000, 5000 + dayFactor * 4500 + (Math.random() - 0.5) * 500));
+                const tempValue = 22 + dayFactor * 4 + (Math.random() - 0.5) * 2;
+                const humidityValue = 70 - dayFactor * 8 + (Math.random() - 0.5) * 5;
+                appState.history.light.push(lightValue);
+                appState.history.temperature.push(Math.round(tempValue * 10) / 10);
+                appState.history.humidity.push(Math.round(humidityValue * 10) / 10);
+                appState.history.timestamps.push(timestamp);
+            }
+            appState.history.lightUsage = [8, 12, 18, 24, 28, 32, 30, 25];
+            appState.energy.hourlyBreakdown = [15, 10, 25, 45, 60, 55, 40, 20];
+            appState.stats.avgLight = Math.round(appState.history.light.reduce((a, b) => a + b, 0) / appState.history.light.length);
+            appState.stats.totalEnergySaved = 2.4;
+            appState.stats.optimalHours = 18;
+            appState.energy.maxLightingHours = 3;
+        }
+
+        function initializeColorPicker() {
+            const container = document.getElementById("colorPickerContainer");
+            if (!container) return;
+            const wrapper = document.getElementById("colorPickerWrapper");
+            const pickerWidth = wrapper ? Math.min(wrapper.clientWidth - 40, 200) : 200;
+            colorPicker = new iro.ColorPicker("#colorPickerContainer", {
+                width: pickerWidth,
+                color: appState.led.selectedColor,
+                layout: [{
+                    component: iro.ui.Wheel,
+                    options: {
+                        wheelLightness: true
+                    }
+                }],
+                borderWidth: 2,
+                borderColor: "#ffffff",
+            });
+            colorPicker.on("color:change", function(color) {
+                updateColorSelection(color);
+            });
+            colorPicker.on("input:end", function(color) {
+                appState.led.selectedColor = color.hexString;
+                calculateWavelengthDistribution(color.hue);
+                showToast("Spectrum updated", "success");
+            });
+        }
+
+        function updateColorSelection(color) {
+            document.getElementById("colorValue").textContent = color.hexString;
+            document.getElementById("spectrumPreview").style.background = color.hexString;
+            appState.led.selectedColor = color.hexString;
+            calculateWavelengthDistribution(color.hue);
+        }
+
+        function calculateWavelengthDistribution(hue) {
+            let red = 0,
+                blue = 0,
+                farRed = 0;
+            if (hue >= 330 || hue < 30) {
+                red = 70;
+                farRed = 20;
+                blue = 10;
+            } else if (hue >= 210 && hue < 270) {
+                blue = 70;
+                red = 20;
+                farRed = 10;
+            } else if (hue >= 270 && hue < 330) {
+                farRed = 50;
+                red = 30;
+                blue = 20;
+            } else {
+                red = 35;
+                blue = 35;
+                farRed = 30;
+            }
+            appState.led.distribution = {
+                red,
+                blue,
+                farRed
+            };
+            document.getElementById("distRed").style.width = red + "%";
+            document.getElementById("distBlue").style.width = blue + "%";
+            document.getElementById("distFarRed").style.width = farRed + "%";
+            updateWavelengthIndicators();
+        }
+
+        function updateWavelengthIndicators() {
+            const {
+                red,
+                blue,
+                farRed
+            } = appState.led.distribution;
+            document.getElementById("redIndicator").style.opacity = appState.led.wavelengths.red && red > 20 ? "1" : "0.4";
+            document.getElementById("blueIndicator").style.opacity = appState.led.wavelengths.blue && blue > 20 ? "1" : "0.4";
+            document.getElementById("farRedIndicator").style.opacity = appState.led.wavelengths.farRed && farRed > 20 ? "1" : "0.4";
+            if (charts.wavelength) {
+                charts.wavelength.data.datasets[0].data = [red, blue, farRed];
+                charts.wavelength.update("none");
+            }
+        }
+
+        function initializeCharts() {
+            const commonOptions = {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+            };
+            const lightUsageCtx = document.getElementById("lightUsageChart");
+            if (lightUsageCtx) {
+                charts.lightUsage = new Chart(lightUsageCtx, {
+                    type: "line",
+                    data: {
+                        labels: ["12pm", "3pm", "6pm", "9pm", "12am", "3am", "6am", "9am"],
+                        datasets: [{
+                            label: "Hours",
+                            data: appState.history.lightUsage,
+                            borderColor: "rgb(13, 110, 253)",
+                            backgroundColor: "rgba(13, 110, 253, 0.1)",
+                            fill: true,
+                            tension: 0.4,
+                        }, ],
+                    },
+                    options: commonOptions,
+                });
+            }
+            const tempHumidityCtx = document.getElementById("tempHumidityChart");
+            if (tempHumidityCtx) {
+                const labels = appState.history.timestamps.map((ts) => new Date(ts).getHours() + ":00");
+                charts.tempHumidity = new Chart(tempHumidityCtx, {
+                    type: "line",
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: "Temp (°C)",
+                            data: appState.history.temperature,
+                            borderColor: "rgb(220, 53, 69)",
+                            yAxisID: "y",
+                        }, {
+                            label: "Humidity (%)",
+                            data: appState.history.humidity,
+                            borderColor: "rgb(13, 202, 240)",
+                            yAxisID: "y1",
+                        }, ],
+                    },
+                    options: {
+                        ...commonOptions,
+                        interaction: {
+                            mode: "index",
+                            intersect: false
+                        },
+                        scales: {
+                            y: {
+                                type: "linear",
+                                display: true,
+                                position: "left",
+                                min: 15,
+                                max: 35
+                            },
+                            y1: {
+                                type: "linear",
+                                display: true,
+                                position: "right",
+                                min: 40,
+                                max: 100,
+                                grid: {
+                                    drawOnChartArea: false
+                                },
+                            },
+                        },
+                    },
+                });
+            }
+            const energyCtx = document.getElementById("energyBreakdownChart");
+            if (energyCtx) {
+                charts.energyBreakdown = new Chart(energyCtx, {
+                    type: "bar",
+                    data: {
+                        labels: ["12-3", "3-6", "6-9", "9-12", "12-3", "3-6", "6-9", "9-12"],
+                        datasets: [{
+                            label: "Watts",
+                            data: appState.energy.hourlyBreakdown,
+                            backgroundColor: "rgba(25, 135, 84, 0.7)",
+                        }, ],
+                    },
+                    options: commonOptions,
+                });
+            }
+            const dailyEnergyCtx = document.getElementById("dailyEnergyChart");
+            if (dailyEnergyCtx) {
+                charts.dailyEnergy = new Chart(dailyEnergyCtx, {
+                    type: "bar",
+                    data: {
+                        labels: ["Today", "Yesterday", "Avg"],
+                        datasets: [{
+                            label: "kWh",
+                            data: appState.energy.dailyComparison,
+                            backgroundColor: ["rgba(13, 110, 253, 0.7)", "rgba(108, 117, 125, 0.7)", "rgba(25, 135, 84, 0.7)", ],
+                        }, ],
+                    },
+                    options: {
+                        ...commonOptions,
+                        indexAxis: "y",
+                    },
+                });
+            }
+            const ledOnOffCtx = document.getElementById("ledOnOffChart");
+            if (ledOnOffCtx) {
+                charts.ledOnOff = new Chart(ledOnOffCtx, {
+                    type: "doughnut",
+                    data: {
+                        labels: ["ON", "OFF"],
+                        datasets: [{
+                            data: [70, 30],
+                            backgroundColor: ["rgb(25, 135, 84)", "rgb(108, 117, 125)"],
+                            borderWidth: 0,
+                        }, ],
+                    },
+                    options: {
+                        ...commonOptions,
+                        cutout: "60%"
+                    },
+                });
+            }
+            const wavelengthCtx = document.getElementById("wavelengthChart");
+            if (wavelengthCtx) {
+                charts.wavelength = new Chart(wavelengthCtx, {
+                    type: "doughnut",
+                    data: {
+                        labels: ["Red", "Blue", "Far-Red"],
+                        datasets: [{
+                            data: [40, 35, 25],
+                            backgroundColor: ["rgb(220, 53, 69)", "rgb(13, 110, 253)", "rgb(108, 117, 125)"],
+                            borderWidth: 0,
+                        }, ],
+                    },
+                    options: {
+                        ...commonOptions,
+                        cutout: "60%"
+                    },
+                });
+            }
+            renderEnergyBreakdownList();
+        }
+
+        function renderEnergyBreakdownList() {
+            const container = document.getElementById("energyBreakdown");
+            const periods = ["12am-3am", "3am-6am", "6am-9am", "9am-12pm", "12pm-3pm", "3pm-6pm", "6pm-9pm", "9pm-12am", ];
+            container.innerHTML = appState.energy.hourlyBreakdown.map((val, i) => `
+<div class="energy-period d-flex justify-content-between align-items-center bg-body-secondary"><span class="small">${escapeHTML(periods[i])}</span><span class="badge bg-primary">${Number(val).toFixed(0)}W</span></div>
+`).join("");
+        }
+
+        function setupEventListeners() {
+            document.getElementById("optimizeBtn").addEventListener("click", function() {
+                appState.mode = "autonomous";
+                appState.led.wavelengths = {
+                    red: true,
+                    blue: true,
+                    farRed: false
+                };
+                appState.led.distribution = {
+                    red: 60,
+                    blue: 30,
+                    farRed: 10
+                };
+                updateModeUI();
+                if (colorPicker) colorPicker.color.hexString = "#ff4757";
+                updateLEDStatus();
+                updateWavelengthIndicators();
+                showToast("Optimized for Growth", "success");
+                addAlert("System optimized for growth", "info", "Optimization");
+            });
+            document.getElementById("nightModeBtn").addEventListener("click", function() {
+                appState.mode = "manual";
+                appState.led.brightness = 15;
+                appState.led.wavelengths = {
+                    red: false,
+                    blue: false,
+                    farRed: true
+                };
+                appState.led.distribution = {
+                    red: 10,
+                    blue: 10,
+                    farRed: 80
+                };
+                updateModeUI();
+                if (colorPicker) colorPicker.color.hexString = "#9b59b6";
+                updateLEDStatus();
+                updateWavelengthIndicators();
+                showToast("Night Mode Activated", "info");
+            });
+            document.getElementById("modeToggle").addEventListener("change", function() {
+                appState.mode = this.checked ? "autonomous" : "manual";
+                updateModeUI();
+                showToast(`${appState.mode === "autonomous" ? "Autonomous" : "Manual"} mode enabled`, "success");
+            });
+            document.getElementById("masterPower").addEventListener("change", function() {
+                appState.led.power = this.checked;
+                updateLEDStatus();
+            });
+            ["red", "blue", "farRed"].forEach((channel) => {
+                const id = `${channel}Wavelength`;
+                const control = document.getElementById(id);
+                if (!control) return;
+
+                control.addEventListener("change", function() {
+                    appState.led.wavelengths[channel] = this.checked;
+                    updateLEDStatus();
+                    updateWavelengthIndicators();
+                });
+            });
+            document.getElementById("decreaseIntensity").addEventListener("click", function() {
+                if (appState.mode === "manual") {
+                    appState.led.brightness = Math.max(0, appState.led.brightness - 5);
+                    updateLEDStatus();
+                }
+            });
+            document.getElementById("increaseIntensity").addEventListener("click", function() {
+                if (appState.mode === "manual") {
+                    appState.led.brightness = Math.min(100, appState.led.brightness + 5);
+                    updateLEDStatus();
+                }
+            });
+            document.getElementById("darkModeToggle").addEventListener("change", function() {
+                document.documentElement.setAttribute("data-bs-theme", this.checked ? "dark" : "light");
+                appState.settings.darkMode = this.checked;
+            });
+            document.getElementById("resetBtn").addEventListener("click", function() {
+                if (confirm("Reset local dashboard state to defaults?")) {
+                    location.reload();
+                }
+            });
+            document.getElementById("clearAlertsBtn").addEventListener("click", function() {
+                appState.alerts = [];
+                updateAlertsUI();
+            });
+            document.getElementById("saveThresholdsBtn").addEventListener("click", saveThresholds);
+            document.getElementById("exportDataBtn").addEventListener("click", exportDataCsv);
+            ["autoAdjustSpectrum", "nightModeAuto", "energySaveMode"].forEach((id) => {
+                document.getElementById(id).addEventListener("change", function() {
+                    appState.settings.automation[id] = this.checked;
+                });
+            });
+        }
+
+        function startSimulation() {
+            updateInterval = setInterval(function() {
+                simulateSensorData();
+                updateUI();
+            }, appState.simulation.updateInterval);
+        }
+
+        function simulateSensorData() {
+            appState.sensors.light = Math.max(0, Math.min(10000, appState.sensors.light + (Math.random() - 0.5) * 500));
+            appState.sensors.temperature = parseFloat((appState.sensors.temperature + (Math.random() - 0.5) * 0.2).toFixed(1));
+            appState.sensors.humidity = Math.max(0, Math.min(100, Math.round(appState.sensors.humidity + (Math.random() - 0.5) * 1)));
+            if (appState.led.power) {
+                appState.energy.total += 0.001;
+            }
+            appendHistorySample();
+        }
+
+        function appendHistorySample() {
+            appState.history.light.push(appState.sensors.light);
+            appState.history.temperature.push(appState.sensors.temperature);
+            appState.history.humidity.push(appState.sensors.humidity);
+            appState.history.timestamps.push(Date.now());
+
+            while (appState.history.timestamps.length > 25) {
+                appState.history.light.shift();
+                appState.history.temperature.shift();
+                appState.history.humidity.shift();
+                appState.history.timestamps.shift();
+            }
+        }
+
+        function updateUI() {
+            document.getElementById("lightValue").textContent = Math.round(appState.sensors.light).toLocaleString();
+            document.getElementById("lightProgress").style.width = clamp(appState.sensors.light / 100, 0, 100) + "%";
+            document.getElementById("tempValue").textContent = appState.sensors.temperature;
+            document.getElementById("humidityValue").textContent = appState.sensors.humidity;
+            document.getElementById("energyValue").textContent = appState.energy.total.toFixed(2);
+            updateStatusBadge("tempStatus", appState.sensors.temperature, appState.settings.tempThreshold.min, appState.settings.tempThreshold.max);
+            updateStatusBadge("humidityStatus", appState.sensors.humidity, appState.settings.humidityThreshold.min, appState.settings.humidityThreshold.max);
+            updateLEDStatus();
+            document.getElementById("avgLight").textContent = Math.round(appState.sensors.light) + " lux";
+            document.getElementById("totalEnergySaved").textContent = appState.stats.totalEnergySaved + " kWh";
+            document.getElementById("optimalHours").textContent = appState.stats.optimalHours + "h";
+            document.getElementById("lastUpdate").textContent = new Date().toLocaleTimeString();
+            updateCharts();
+        }
+
+        function updateStatusBadge(id, val, min, max) {
+            const el = document.getElementById(id);
+            if (val < min) {
+                el.className = "badge mt-2 bg-warning";
+                el.textContent = "Low";
+            } else if (val > max) {
+                el.className = "badge mt-2 bg-danger";
+                el.textContent = "High";
+            } else {
+                el.className = "badge mt-2 bg-success";
+                el.textContent = "Optimal";
+            }
+        }
+
+        function updateModeUI() {
+            const toggle = document.getElementById("modeToggle");
+            const badge = document.getElementById("modeBadge");
+            const stepper = document.getElementById("intensityStepper");
+            const picker = document.getElementById("colorPickerWrapper");
+            toggle.checked = appState.mode === "autonomous";
+            if (appState.mode === "autonomous") {
+                badge.className = "badge bg-success";
+                badge.innerHTML = '<i class="ph ph-robot me-1"></i>Autonomous';
+                stepper.classList.add("control-disabled");
+                picker.classList.add("control-disabled");
+                document.getElementById("intensityModeLabel").className = "badge bg-info";
+                document.getElementById("intensityModeLabel").textContent = "Auto";
+            } else {
+                badge.className = "badge bg-secondary";
+                badge.innerHTML = '<i class="ph ph-hand me-1"></i>Manual';
+                stepper.classList.remove("control-disabled");
+                picker.classList.remove("control-disabled");
+                document.getElementById("intensityModeLabel").className = "badge bg-secondary";
+                document.getElementById("intensityModeLabel").textContent = "Manual";
+            }
+        }
+
+        function updateLEDStatus() {
+            const powerBadge = document.getElementById("ledPowerStatus");
+            powerBadge.className = appState.led.power ? "badge bg-success" : "badge bg-secondary";
+            powerBadge.textContent = appState.led.power ? "ON" : "OFF";
+            document.getElementById("ledBrightness").textContent = appState.led.brightness;
+            document.getElementById("masterPower").checked = appState.led.power;
+            document.getElementById("redWavelength").checked = appState.led.wavelengths.red;
+            document.getElementById("blueWavelength").checked = appState.led.wavelengths.blue;
+            document.getElementById("farRedWavelength").checked = appState.led.wavelengths.farRed;
+            document.getElementById("activeWavelengths").textContent = getActiveWavelengthLabel();
+            updateIntensityDisplay();
+        }
+
+        function getActiveWavelengthLabel() {
+            const labels = [];
+            if (appState.led.wavelengths.red) labels.push("R");
+            if (appState.led.wavelengths.blue) labels.push("B");
+            if (appState.led.wavelengths.farRed) labels.push("FR");
+            return labels.length ? labels.join("+") : "None";
+        }
+
+        function updateIntensityDisplay() {
+            document.getElementById("intensityValue").textContent = appState.led.brightness;
+            const warning = document.getElementById("intensityWarning");
+            if (appState.mode === "manual" && (appState.led.brightness < 20 || appState.led.brightness > 90)) {
+                warning.classList.remove("d-none");
+            } else {
+                warning.classList.add("d-none");
+            }
+        }
+
+        function addAlert(msg, type, title) {
+            appState.alerts.unshift({
+                id: ++appState.alertIdCounter,
+                title: title || "Alert",
+                message: msg,
+                severity: type,
+                timestamp: Date.now(),
+            });
+            updateAlertsUI();
+        }
+
+        function updateAlertsUI() {
+            const list = document.getElementById("alertsList");
+            const badge = document.getElementById("alertBadge");
+            badge.textContent = appState.alerts.length;
+            document.getElementById("alertCount").textContent = appState.alerts.length + " alerts";
+            if (appState.alerts.length === 0) {
+                list.innerHTML = `<div class="empty-state"><i class="ph ph-check-circle fs-1 text-success"></i><p class="mt-2 mb-0">All systems optimal</p></div>`;
+            } else {
+                list.innerHTML = appState.alerts.map((a) => `
+<div class="alert-item alert-${escapeHTML(a.severity)} p-3 mb-2 rounded bg-body-secondary"><strong>${escapeHTML(a.title)}</strong><p class="small mb-0">${escapeHTML(a.message)}</p></div>
+`).join("");
+            }
+        }
+
+        function showToast(msg, type) {
+            const container = document.getElementById("toastContainer");
+            const bg = type === "success" ? "bg-success" : "bg-info";
+            const html = `
+<div class="toast align-items-center text-white ${bg} border-0" role="alert" aria-live="assertive" aria-atomic="true"><div class="d-flex"><div class="toast-body">${escapeHTML(msg)}</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div></div>`;
+            container.insertAdjacentHTML("beforeend", html);
+            const toastEl = container.lastElementChild;
+            const toast = new bootstrap.Toast(toastEl);
+            toastEl.addEventListener("hidden.bs.toast", function() {
+                toastEl.remove();
+            });
+            toast.show();
+        }
+
+        function renderFatalError(error) {
+            const main = document.querySelector("main");
+            const message = error instanceof Error ? error.message : "Dashboard failed to initialize";
+            if (!main) return;
+            main.innerHTML = `
+<div class="container py-5"><div class="alert alert-danger" role="alert"><strong>Dashboard unavailable.</strong><div class="small mt-1">${escapeHTML(message)}</div></div></div>`;
+        }
+
+        function saveThresholds() {
+            const tempMin = Number(document.getElementById("tempMin").value);
+            const tempMax = Number(document.getElementById("tempMax").value);
+            const humidityMin = Number(document.getElementById("humidityMin").value);
+            const humidityMax = Number(document.getElementById("humidityMax").value);
+
+            if (!Number.isFinite(tempMin) || !Number.isFinite(tempMax) || tempMin >= tempMax) {
+                showToast("Temperature range is invalid", "info");
+                return;
+            }
+
+            if (!Number.isFinite(humidityMin) || !Number.isFinite(humidityMax) || humidityMin >= humidityMax) {
+                showToast("Humidity range is invalid", "info");
+                return;
+            }
+
+            appState.settings.tempThreshold = {
+                min: tempMin,
+                max: tempMax
+            };
+            appState.settings.humidityThreshold = {
+                min: humidityMin,
+                max: humidityMax
+            };
+            updateUI();
+            showToast("Thresholds saved", "success");
+        }
+
+        function updateCharts() {
+            if (charts.tempHumidity) {
+                charts.tempHumidity.data.labels = appState.history.timestamps.map(formatClockTime);
+                charts.tempHumidity.data.datasets[0].data = appState.history.temperature;
+                charts.tempHumidity.data.datasets[1].data = appState.history.humidity;
+                charts.tempHumidity.update("none");
+            }
+
+            if (charts.ledOnOff) {
+                const onPct = appState.led.power ? clamp(appState.led.brightness, 0, 100) : 0;
+                charts.ledOnOff.data.datasets[0].data = [onPct, 100 - onPct];
+                charts.ledOnOff.update("none");
+            }
+        }
+
+        function exportDataCsv() {
+            const rows = [
+                ["timestamp", "light_lux", "temperature_c", "humidity_pct"],
+                ...appState.history.timestamps.map((timestamp, index) => [
+                    new Date(timestamp).toISOString(),
+                    Math.round(appState.history.light[index]),
+                    appState.history.temperature[index],
+                    appState.history.humidity[index],
+                ]),
+            ];
+            const csv = rows.map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(",")).join("\n");
+            const blob = new Blob([csv], {
+                type: "text/csv;charset=utf-8"
+            });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = `spot-history-${new Date().toISOString().slice(0, 10)}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+            showToast("CSV exported", "success");
+        }
+    </script>
+</body>
+
+</html>
