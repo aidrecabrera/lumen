@@ -20,7 +20,7 @@ static constexpr size_t CONFIG_COMMAND_DOC_SIZE =
 static constexpr size_t MODE_COMMAND_DOC_SIZE = JSON_OBJECT_SIZE(2) + COMMAND_ID_DOC_SLACK;
 
 bool readBoolField(JsonVariantConst value, bool& out_value) {
-    if (value.isNull()) {
+    if (!value.is<bool>()) {
         return false;
     }
 
@@ -29,7 +29,7 @@ bool readBoolField(JsonVariantConst value, bool& out_value) {
 }
 
 bool readU8Field(JsonVariantConst value, uint8_t& out_value) {
-    if (value.isNull()) {
+    if (!value.is<uint32_t>()) {
         return false;
     }
 
@@ -57,7 +57,7 @@ bool readPercentField(JsonVariantConst value, uint8_t& out_value) {
 }
 
 bool readFloatField(JsonVariantConst value, float& out_value) {
-    if (value.isNull()) {
+    if (!value.is<float>() && !value.is<int>() && !value.is<unsigned int>()) {
         return false;
     }
 
@@ -111,7 +111,13 @@ bool decodeBaseDocument(
         return false;
     }
 
-    const char* command_id = doc["command_id"] | nullptr;
+    const JsonVariantConst command_id_value = doc["command_id"];
+    if (!command_id_value.is<const char*>()) {
+        ESP_LOGW(TAG, "command id missing");
+        return false;
+    }
+
+    const char* command_id = command_id_value.as<const char*>();
     if (command_id == nullptr || command_id[0] == '\0') {
         ESP_LOGW(TAG, "command id missing");
         return false;
@@ -183,7 +189,7 @@ bool decodeConfigPayload(const uint8_t* payload, uint16_t length, CommandEnvelop
     setEnvelopeBase(out_command, command_id, CommandKind::CONFIG_UPDATE);
 
     const JsonVariantConst thresholds = doc["thresholds"];
-    if (thresholds.isNull()) {
+    if (!thresholds.is<JsonObjectConst>()) {
         ESP_LOGW(TAG, "thresholds missing");
         return false;
     }

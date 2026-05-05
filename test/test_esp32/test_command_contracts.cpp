@@ -162,6 +162,55 @@ std::vector<uint8_t> makeLedPayloadIncomplete() {
     return out;
 }
 
+std::vector<uint8_t> makeLedPayloadStringBrightness() {
+    std::vector<uint8_t> out;
+    packMap(out, 9);
+    packStr(out, "command_id");
+    packStr(out, "cmd-led-5");
+    packStr(out, "power");
+    packBool(out, true);
+    packStr(out, "brightness_pct");
+    packStr(out, "55");
+    packStr(out, "red_enabled");
+    packBool(out, true);
+    packStr(out, "blue_enabled");
+    packBool(out, true);
+    packStr(out, "far_red_enabled");
+    packBool(out, true);
+    packStr(out, "red_dist_pct");
+    packUInt(out, 34);
+    packStr(out, "blue_dist_pct");
+    packUInt(out, 33);
+    packStr(out, "far_red_dist_pct");
+    packUInt(out, 33);
+    return out;
+}
+
+std::vector<uint8_t> makeLedPayloadStringPower() {
+    std::vector<uint8_t> out = makeValidLedPayload();
+    out.clear();
+    packMap(out, 9);
+    packStr(out, "command_id");
+    packStr(out, "cmd-led-6");
+    packStr(out, "power");
+    packStr(out, "true");
+    packStr(out, "brightness_pct");
+    packUInt(out, 55);
+    packStr(out, "red_enabled");
+    packBool(out, true);
+    packStr(out, "blue_enabled");
+    packBool(out, true);
+    packStr(out, "far_red_enabled");
+    packBool(out, true);
+    packStr(out, "red_dist_pct");
+    packUInt(out, 34);
+    packStr(out, "blue_dist_pct");
+    packUInt(out, 33);
+    packStr(out, "far_red_dist_pct");
+    packUInt(out, 33);
+    return out;
+}
+
 std::vector<uint8_t> makeMalformedLedPayload() {
     std::vector<uint8_t> out = makeValidLedPayload();
     out.pop_back();
@@ -212,11 +261,39 @@ std::vector<uint8_t> makeConfigPayloadMinGreaterThanMax() {
     return out;
 }
 
+std::vector<uint8_t> makeConfigPayloadStringThresholds() {
+    std::vector<uint8_t> out;
+    packMap(out, 2);
+    packStr(out, "command_id");
+    packStr(out, "cmd-cfg-4");
+    packStr(out, "thresholds");
+    packMap(out, 4);
+    packStr(out, "temp_min_c");
+    packStr(out, "18.0");
+    packStr(out, "temp_max_c");
+    packFloat32(out, 30.0f);
+    packStr(out, "humidity_min_pct");
+    packFloat32(out, 40.0f);
+    packStr(out, "humidity_max_pct");
+    packFloat32(out, 70.0f);
+    return out;
+}
+
 std::vector<uint8_t> makeModePayloadMissingMode() {
     std::vector<uint8_t> out;
     packMap(out, 1);
     packStr(out, "command_id");
     packStr(out, "cmd-mode-1");
+    return out;
+}
+
+std::vector<uint8_t> makeModePayloadStringMode() {
+    std::vector<uint8_t> out;
+    packMap(out, 2);
+    packStr(out, "command_id");
+    packStr(out, "cmd-mode-3");
+    packStr(out, "mode");
+    packStr(out, "1");
     return out;
 }
 
@@ -240,14 +317,14 @@ void prepareCommandHandler() {
     TEST_ASSERT_TRUE(TaskManager::createQueues());
     TEST_ASSERT_TRUE(CommandHandler::init());
 
-    const RuntimeConfig& cfg = ConfigManager::getConfig();
+    const RuntimeConfig cfg = ConfigManager::getConfigSnapshot();
     TEST_ASSERT_NOT_EQUAL('\0', cfg.device_id[0]);
 
     s_prepared = true;
 }
 
 std::string makeTopic(const char* leaf) {
-    const RuntimeConfig& cfg = ConfigManager::getConfig();
+    const RuntimeConfig cfg = ConfigManager::getConfigSnapshot();
     std::string topic = "lumen/";
     topic += cfg.device_id;
     topic += "/command/";
@@ -355,6 +432,34 @@ void test_command_handler_rejects_led_incomplete_payload() {
     );
 }
 
+void test_command_handler_rejects_led_string_brightness() {
+    prepareCommandHandler();
+    const auto payload = makeLedPayloadStringBrightness();
+    const std::string topic = makeTopic("led");
+
+    TEST_ASSERT_FALSE(
+        CommandHandler::handleInbound(
+            topic.c_str(),
+            payload.data(),
+            static_cast<uint16_t>(payload.size())
+        )
+    );
+}
+
+void test_command_handler_rejects_led_string_power() {
+    prepareCommandHandler();
+    const auto payload = makeLedPayloadStringPower();
+    const std::string topic = makeTopic("led");
+
+    TEST_ASSERT_FALSE(
+        CommandHandler::handleInbound(
+            topic.c_str(),
+            payload.data(),
+            static_cast<uint16_t>(payload.size())
+        )
+    );
+}
+
 void test_command_handler_rejects_config_missing_thresholds() {
     prepareCommandHandler();
     const auto payload = makeConfigPayloadMissingThresholds();
@@ -397,6 +502,20 @@ void test_command_handler_rejects_config_min_greater_than_max() {
     );
 }
 
+void test_command_handler_rejects_config_string_threshold() {
+    prepareCommandHandler();
+    const auto payload = makeConfigPayloadStringThresholds();
+    const std::string topic = makeTopic("config");
+
+    TEST_ASSERT_FALSE(
+        CommandHandler::handleInbound(
+            topic.c_str(),
+            payload.data(),
+            static_cast<uint16_t>(payload.size())
+        )
+    );
+}
+
 void test_command_handler_rejects_mode_missing_mode() {
     prepareCommandHandler();
     const auto payload = makeModePayloadMissingMode();
@@ -425,3 +544,16 @@ void test_command_handler_rejects_mode_unsupported_value() {
     );
 }
 
+void test_command_handler_rejects_mode_string_value() {
+    prepareCommandHandler();
+    const auto payload = makeModePayloadStringMode();
+    const std::string topic = makeTopic("mode");
+
+    TEST_ASSERT_FALSE(
+        CommandHandler::handleInbound(
+            topic.c_str(),
+            payload.data(),
+            static_cast<uint16_t>(payload.size())
+        )
+    );
+}

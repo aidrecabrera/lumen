@@ -46,11 +46,15 @@ void test_command_handler_rejects_led_missing_command_id();
 void test_command_handler_rejects_led_brightness_over_100();
 void test_command_handler_rejects_led_distribution_sum_not_100();
 void test_command_handler_rejects_led_incomplete_payload();
+void test_command_handler_rejects_led_string_brightness();
+void test_command_handler_rejects_led_string_power();
 void test_command_handler_rejects_config_missing_thresholds();
 void test_command_handler_rejects_config_nan_thresholds();
 void test_command_handler_rejects_config_min_greater_than_max();
+void test_command_handler_rejects_config_string_threshold();
 void test_command_handler_rejects_mode_missing_mode();
 void test_command_handler_rejects_mode_unsupported_value();
+void test_command_handler_rejects_mode_string_value();
 
 // test_led_scale_channel.cpp
 void test_scale_channel_full_brightness_full_channel();
@@ -104,11 +108,15 @@ void setup() {
     RUN_TEST(test_command_handler_rejects_led_brightness_over_100);
     RUN_TEST(test_command_handler_rejects_led_distribution_sum_not_100);
     RUN_TEST(test_command_handler_rejects_led_incomplete_payload);
+    RUN_TEST(test_command_handler_rejects_led_string_brightness);
+    RUN_TEST(test_command_handler_rejects_led_string_power);
     RUN_TEST(test_command_handler_rejects_config_missing_thresholds);
     RUN_TEST(test_command_handler_rejects_config_nan_thresholds);
     RUN_TEST(test_command_handler_rejects_config_min_greater_than_max);
+    RUN_TEST(test_command_handler_rejects_config_string_threshold);
     RUN_TEST(test_command_handler_rejects_mode_missing_mode);
     RUN_TEST(test_command_handler_rejects_mode_unsupported_value);
+    RUN_TEST(test_command_handler_rejects_mode_string_value);
 
     RUN_TEST(test_sensors_init_succeeds);
     RUN_TEST(test_sensors_readCurrent_succeeds_and_sequence_increments);
