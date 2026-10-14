@@ -56,6 +56,9 @@ void test_command_handler_rejects_config_string_threshold();
 void test_command_handler_rejects_mode_missing_mode();
 void test_command_handler_rejects_mode_unsupported_value();
 void test_command_handler_rejects_mode_string_value();
+void test_command_handler_decodes_valid_led_payload();
+void test_command_handler_decodes_valid_config_payload();
+void test_command_handler_decodes_valid_mode_payload();
 
 // test_led_scale_channel.cpp
 void test_scale_channel_full_brightness_full_channel();
@@ -119,6 +122,9 @@ void setup() {
     RUN_TEST(test_command_handler_rejects_mode_missing_mode);
     RUN_TEST(test_command_handler_rejects_mode_unsupported_value);
     RUN_TEST(test_command_handler_rejects_mode_string_value);
+    RUN_TEST(test_command_handler_decodes_valid_led_payload);
+    RUN_TEST(test_command_handler_decodes_valid_config_payload);
+    RUN_TEST(test_command_handler_decodes_valid_mode_payload);
 
     RUN_TEST(test_sensors_init_succeeds);
     RUN_TEST(test_sensors_readCurrent_succeeds_and_sequence_increments);

@@ -7,7 +7,6 @@
 
 #include "lumen_board_config.h"
 #include "lumen_system_utils.h"
-#include "lumen_task_manager.h"
 #include "lumen_type_validation.h"
 
 namespace {
@@ -225,44 +224,30 @@ bool decodeModePayload(const uint8_t* payload, uint16_t length, CommandEnvelope&
 
     return readModeField(doc["mode"], out_command.desired_mode);
 }
-
-bool enqueueCommand(const CommandEnvelope& command) {
-    if (!TaskManager::dispatchCommand(command)) {
-        ESP_LOGW(TAG, "command dispatch failed");
-        return false;
-    }
-
-    return true;
-}
 }  // namespace
 
 namespace CommandHandler {
-bool init() { return true; }
-
-bool handleInbound(const char* topic, const uint8_t* payload, uint16_t length) {
+bool decode(
+    const char* topic, const uint8_t* payload, uint16_t length, CommandEnvelope& out_command
+) {
     if (topic == nullptr || payload == nullptr || length == 0U) {
         ESP_LOGW(TAG, "invalid inbound command");
         return false;
     }
 
-    CommandEnvelope command = {};
-    bool was_decoded = false;
-
     if (endsWith(topic, MQTT_TOPIC_CMD_LED_SUFFIX)) {
-        was_decoded = decodeLedPayload(payload, length, command);
-    } else if (endsWith(topic, MQTT_TOPIC_CMD_CONFIG_SUFFIX)) {
-        was_decoded = decodeConfigPayload(payload, length, command);
-    } else if (endsWith(topic, MQTT_TOPIC_CMD_MODE_SUFFIX)) {
-        was_decoded = decodeModePayload(payload, length, command);
-    } else {
-        ESP_LOGW(TAG, "unknown command topic: %s", topic);
-        return false;
+        return decodeLedPayload(payload, length, out_command);
     }
 
-    if (!was_decoded) {
-        return false;
+    if (endsWith(topic, MQTT_TOPIC_CMD_CONFIG_SUFFIX)) {
+        return decodeConfigPayload(payload, length, out_command);
     }
 
-    return enqueueCommand(command);
+    if (endsWith(topic, MQTT_TOPIC_CMD_MODE_SUFFIX)) {
+        return decodeModePayload(payload, length, out_command);
+    }
+
+    ESP_LOGW(TAG, "unknown command topic: %s", topic);
+    return false;
 }
 }  // namespace CommandHandler

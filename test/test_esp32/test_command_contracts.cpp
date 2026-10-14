@@ -7,7 +7,6 @@
 #include "lumen_app_types.h"
 #include "lumen_command_handler.h"
 #include "lumen_config_manager.h"
-#include "lumen_task_manager.h"
 
 namespace {
 
@@ -279,6 +278,34 @@ std::vector<uint8_t> makeConfigPayloadStringThresholds() {
     return out;
 }
 
+std::vector<uint8_t> makeValidConfigPayload() {
+    std::vector<uint8_t> out;
+    packMap(out, 2);
+    packStr(out, "command_id");
+    packStr(out, "cmd-cfg-ok");
+    packStr(out, "thresholds");
+    packMap(out, 4);
+    packStr(out, "temp_min_c");
+    packFloat32(out, 18.5f);
+    packStr(out, "temp_max_c");
+    packUInt(out, 30);
+    packStr(out, "humidity_min_pct");
+    packFloat32(out, 40.0f);
+    packStr(out, "humidity_max_pct");
+    packFloat32(out, 70.0f);
+    return out;
+}
+
+std::vector<uint8_t> makeValidModePayload() {
+    std::vector<uint8_t> out;
+    packMap(out, 2);
+    packStr(out, "command_id");
+    packStr(out, "cmd-mode-ok");
+    packStr(out, "mode");
+    packUInt(out, static_cast<uint8_t>(DeviceMode::MANUAL));
+    return out;
+}
+
 std::vector<uint8_t> makeModePayloadMissingMode() {
     std::vector<uint8_t> out;
     packMap(out, 1);
@@ -314,13 +341,16 @@ void prepareCommandHandler() {
 
     TEST_ASSERT_TRUE(ConfigManager::init());
     TEST_ASSERT_TRUE(ConfigManager::loadDefaults());
-    TEST_ASSERT_TRUE(TaskManager::createQueues());
-    TEST_ASSERT_TRUE(CommandHandler::init());
 
     const RuntimeConfig cfg = ConfigManager::getConfigSnapshot();
     TEST_ASSERT_NOT_EQUAL('\0', cfg.device_id[0]);
 
     s_prepared = true;
+}
+
+bool decodeCommand(const char* topic, const uint8_t* payload, uint16_t length) {
+    CommandEnvelope command = {};
+    return CommandHandler::decode(topic, payload, length, command);
 }
 
 std::string makeTopic(const char* leaf) {
@@ -336,16 +366,16 @@ std::string makeTopic(const char* leaf) {
 
 void test_command_handler_rejects_null_topic() {
     const uint8_t payload[] = {0x80U};
-    TEST_ASSERT_FALSE(CommandHandler::handleInbound(nullptr, payload, sizeof(payload)));
+    TEST_ASSERT_FALSE(decodeCommand(nullptr, payload, sizeof(payload)));
 }
 
 void test_command_handler_rejects_null_payload() {
-    TEST_ASSERT_FALSE(CommandHandler::handleInbound("lumen/x/command/led", nullptr, 1));
+    TEST_ASSERT_FALSE(decodeCommand("lumen/x/command/led", nullptr, 1));
 }
 
 void test_command_handler_rejects_zero_length_payload() {
     const uint8_t payload[] = {0x80U};
-    TEST_ASSERT_FALSE(CommandHandler::handleInbound("lumen/x/command/led", payload, 0));
+    TEST_ASSERT_FALSE(decodeCommand("lumen/x/command/led", payload, 0));
 }
 
 void test_command_handler_rejects_unknown_topic() {
@@ -354,7 +384,7 @@ void test_command_handler_rejects_unknown_topic() {
     const std::string topic = makeTopic("unsupported");
 
     TEST_ASSERT_FALSE(
-        CommandHandler::handleInbound(
+        decodeCommand(
             topic.c_str(),
             payload.data(),
             static_cast<uint16_t>(payload.size())
@@ -368,7 +398,7 @@ void test_command_handler_rejects_malformed_led_payload() {
     const std::string topic = makeTopic("led");
 
     TEST_ASSERT_FALSE(
-        CommandHandler::handleInbound(
+        decodeCommand(
             topic.c_str(),
             payload.data(),
             static_cast<uint16_t>(payload.size())
@@ -382,7 +412,7 @@ void test_command_handler_rejects_led_missing_command_id() {
     const std::string topic = makeTopic("led");
 
     TEST_ASSERT_FALSE(
-        CommandHandler::handleInbound(
+        decodeCommand(
             topic.c_str(),
             payload.data(),
             static_cast<uint16_t>(payload.size())
@@ -396,7 +426,7 @@ void test_command_handler_rejects_led_brightness_over_100() {
     const std::string topic = makeTopic("led");
 
     TEST_ASSERT_FALSE(
-        CommandHandler::handleInbound(
+        decodeCommand(
             topic.c_str(),
             payload.data(),
             static_cast<uint16_t>(payload.size())
@@ -410,7 +440,7 @@ void test_command_handler_rejects_led_distribution_sum_not_100() {
     const std::string topic = makeTopic("led");
 
     TEST_ASSERT_FALSE(
-        CommandHandler::handleInbound(
+        decodeCommand(
             topic.c_str(),
             payload.data(),
             static_cast<uint16_t>(payload.size())
@@ -424,7 +454,7 @@ void test_command_handler_rejects_led_incomplete_payload() {
     const std::string topic = makeTopic("led");
 
     TEST_ASSERT_FALSE(
-        CommandHandler::handleInbound(
+        decodeCommand(
             topic.c_str(),
             payload.data(),
             static_cast<uint16_t>(payload.size())
@@ -438,7 +468,7 @@ void test_command_handler_rejects_led_string_brightness() {
     const std::string topic = makeTopic("led");
 
     TEST_ASSERT_FALSE(
-        CommandHandler::handleInbound(
+        decodeCommand(
             topic.c_str(),
             payload.data(),
             static_cast<uint16_t>(payload.size())
@@ -452,7 +482,7 @@ void test_command_handler_rejects_led_string_power() {
     const std::string topic = makeTopic("led");
 
     TEST_ASSERT_FALSE(
-        CommandHandler::handleInbound(
+        decodeCommand(
             topic.c_str(),
             payload.data(),
             static_cast<uint16_t>(payload.size())
@@ -466,7 +496,7 @@ void test_command_handler_rejects_config_missing_thresholds() {
     const std::string topic = makeTopic("config");
 
     TEST_ASSERT_FALSE(
-        CommandHandler::handleInbound(
+        decodeCommand(
             topic.c_str(),
             payload.data(),
             static_cast<uint16_t>(payload.size())
@@ -480,7 +510,7 @@ void test_command_handler_rejects_config_nan_thresholds() {
     const std::string topic = makeTopic("config");
 
     TEST_ASSERT_FALSE(
-        CommandHandler::handleInbound(
+        decodeCommand(
             topic.c_str(),
             payload.data(),
             static_cast<uint16_t>(payload.size())
@@ -494,7 +524,7 @@ void test_command_handler_rejects_config_min_greater_than_max() {
     const std::string topic = makeTopic("config");
 
     TEST_ASSERT_FALSE(
-        CommandHandler::handleInbound(
+        decodeCommand(
             topic.c_str(),
             payload.data(),
             static_cast<uint16_t>(payload.size())
@@ -508,7 +538,7 @@ void test_command_handler_rejects_config_string_threshold() {
     const std::string topic = makeTopic("config");
 
     TEST_ASSERT_FALSE(
-        CommandHandler::handleInbound(
+        decodeCommand(
             topic.c_str(),
             payload.data(),
             static_cast<uint16_t>(payload.size())
@@ -522,7 +552,7 @@ void test_command_handler_rejects_mode_missing_mode() {
     const std::string topic = makeTopic("mode");
 
     TEST_ASSERT_FALSE(
-        CommandHandler::handleInbound(
+        decodeCommand(
             topic.c_str(),
             payload.data(),
             static_cast<uint16_t>(payload.size())
@@ -536,11 +566,86 @@ void test_command_handler_rejects_mode_unsupported_value() {
     const std::string topic = makeTopic("mode");
 
     TEST_ASSERT_FALSE(
-        CommandHandler::handleInbound(
+        decodeCommand(
             topic.c_str(),
             payload.data(),
             static_cast<uint16_t>(payload.size())
         )
+    );
+}
+
+void test_command_handler_decodes_valid_led_payload() {
+    prepareCommandHandler();
+    const auto payload = makeValidLedPayload();
+    const std::string topic = makeTopic("led");
+    CommandEnvelope command = {};
+
+    TEST_ASSERT_TRUE(
+        CommandHandler::decode(
+            topic.c_str(),
+            payload.data(),
+            static_cast<uint16_t>(payload.size()),
+            command
+        )
+    );
+    TEST_ASSERT_EQUAL_STRING("cmd-led-1", command.command_id);
+    TEST_ASSERT_EQUAL_UINT8(
+        static_cast<uint8_t>(CommandKind::LED_CONTROL), static_cast<uint8_t>(command.kind)
+    );
+    TEST_ASSERT_TRUE(command.desired_led.power);
+    TEST_ASSERT_EQUAL_UINT8(55, command.desired_led.brightness_pct);
+    TEST_ASSERT_TRUE(command.desired_led.red_enabled);
+    TEST_ASSERT_TRUE(command.desired_led.blue_enabled);
+    TEST_ASSERT_TRUE(command.desired_led.far_red_enabled);
+    TEST_ASSERT_EQUAL_UINT8(34, command.desired_led.red_dist_pct);
+    TEST_ASSERT_EQUAL_UINT8(33, command.desired_led.blue_dist_pct);
+    TEST_ASSERT_EQUAL_UINT8(33, command.desired_led.far_red_dist_pct);
+}
+
+void test_command_handler_decodes_valid_config_payload() {
+    prepareCommandHandler();
+    const auto payload = makeValidConfigPayload();
+    const std::string topic = makeTopic("config");
+    CommandEnvelope command = {};
+
+    TEST_ASSERT_TRUE(
+        CommandHandler::decode(
+            topic.c_str(),
+            payload.data(),
+            static_cast<uint16_t>(payload.size()),
+            command
+        )
+    );
+    TEST_ASSERT_EQUAL_STRING("cmd-cfg-ok", command.command_id);
+    TEST_ASSERT_EQUAL_UINT8(
+        static_cast<uint8_t>(CommandKind::CONFIG_UPDATE), static_cast<uint8_t>(command.kind)
+    );
+    TEST_ASSERT_EQUAL_FLOAT(18.5f, command.desired_thresholds.temp_min_c);
+    TEST_ASSERT_EQUAL_FLOAT(30.0f, command.desired_thresholds.temp_max_c);
+    TEST_ASSERT_EQUAL_FLOAT(40.0f, command.desired_thresholds.humidity_min_pct);
+    TEST_ASSERT_EQUAL_FLOAT(70.0f, command.desired_thresholds.humidity_max_pct);
+}
+
+void test_command_handler_decodes_valid_mode_payload() {
+    prepareCommandHandler();
+    const auto payload = makeValidModePayload();
+    const std::string topic = makeTopic("mode");
+    CommandEnvelope command = {};
+
+    TEST_ASSERT_TRUE(
+        CommandHandler::decode(
+            topic.c_str(),
+            payload.data(),
+            static_cast<uint16_t>(payload.size()),
+            command
+        )
+    );
+    TEST_ASSERT_EQUAL_STRING("cmd-mode-ok", command.command_id);
+    TEST_ASSERT_EQUAL_UINT8(
+        static_cast<uint8_t>(CommandKind::MODE_CHANGE), static_cast<uint8_t>(command.kind)
+    );
+    TEST_ASSERT_EQUAL_UINT8(
+        static_cast<uint8_t>(DeviceMode::MANUAL), static_cast<uint8_t>(command.desired_mode)
     );
 }
 
@@ -550,7 +655,7 @@ void test_command_handler_rejects_mode_string_value() {
     const std::string topic = makeTopic("mode");
 
     TEST_ASSERT_FALSE(
-        CommandHandler::handleInbound(
+        decodeCommand(
             topic.c_str(),
             payload.data(),
             static_cast<uint16_t>(payload.size())

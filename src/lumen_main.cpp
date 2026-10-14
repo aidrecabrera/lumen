@@ -6,7 +6,6 @@
 #include <esp_task_wdt.h>
 
 #include "lumen_board_config.h"
-#include "lumen_command_handler.h"
 #include "lumen_config_manager.h"
 #include "lumen_energy_tracker.h"
 #include "lumen_led_control.h"
@@ -98,7 +97,6 @@ void setup() {
     const RuntimeConfig config = ConfigManager::getConfigSnapshot();
     requireBootStep(MqttClient::init(config.device_id), "mqtt");
     requireBootStep(TaskManager::createQueues(), "queues");
-    requireBootStep(CommandHandler::init(), "command handler");
     requireBootStep(TaskManager::createTasks(), "tasks");
 
     boot_failure_count = 0;

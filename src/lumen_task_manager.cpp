@@ -118,7 +118,9 @@ void drainLatestSensor(SensorReading& latest_reading, bool& has_reading) {
 }
 
 void inboundCommandBridge(const char* topic, const uint8_t* payload, uint16_t length) {
-    const bool was_handled = CommandHandler::handleInbound(topic, payload, length);
+    CommandEnvelope command = {};
+    const bool was_handled = CommandHandler::decode(topic, payload, length, command) &&
+                             TaskManager::dispatchCommand(command);
     if (!was_handled) {
         ESP_LOGW(TAG, "inbound command not handled");
     }
