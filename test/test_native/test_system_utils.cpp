@@ -53,30 +53,6 @@ void test_copyText_dest_cleared_on_overflow() {
     TEST_ASSERT_EQUAL('\0', dest[0]);
 }
 
-void test_endsWith_exact_suffix_match() {
-    TEST_ASSERT_TRUE(endsWith("lumen/status", "status"));
-}
-
-void test_endsWith_no_match() {
-    TEST_ASSERT_FALSE(endsWith("lumen/status", "energy"));
-}
-
-void test_endsWith_suffix_longer_than_text() {
-    TEST_ASSERT_FALSE(endsWith("abc", "abcd"));
-}
-
-void test_endsWith_empty_suffix() {
-    TEST_ASSERT_TRUE(endsWith("abc", ""));
-}
-
-void test_endsWith_null_text() {
-    TEST_ASSERT_FALSE(endsWith(nullptr, "abc"));
-}
-
-void test_endsWith_null_suffix() {
-    TEST_ASSERT_FALSE(endsWith("abc", nullptr));
-}
-
 void test_getNowMs_monotonic_non_decreasing() {
     const uint64_t t1 = getNowMs();
     std::this_thread::sleep_for(std::chrono::milliseconds(2));

@@ -2,7 +2,6 @@
 #include <esp_err.h>
 #include <esp_idf_version.h>
 #include <esp_log.h>
-#include <esp_system.h>
 #include <esp_task_wdt.h>
 
 #include "lumen_board_config.h"

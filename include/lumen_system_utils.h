@@ -4,7 +4,6 @@
 #include <stdint.h>
 
 bool copyText(char* dest, size_t dest_len, const char* src);
-bool endsWith(const char* text, const char* suffix);
 uint64_t getNowMs();
 
 // Doubles the reconnect backoff, capped at max_backoff_ms.

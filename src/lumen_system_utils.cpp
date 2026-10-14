@@ -29,21 +29,6 @@ bool copyText(char* dest, size_t dest_len, const char* src) {
     return true;
 }
 
-bool endsWith(const char* text, const char* suffix) {
-    if (text == nullptr || suffix == nullptr) {
-        return false;
-    }
-
-    const size_t text_len = strlen(text);
-    const size_t suffix_len = strlen(suffix);
-
-    if (text_len < suffix_len) {
-        return false;
-    }
-
-    return strcmp(text + text_len - suffix_len, suffix) == 0;
-}
-
 uint32_t nextBackoffMs(uint32_t current_backoff_ms, uint32_t max_backoff_ms) {
     if (current_backoff_ms >= max_backoff_ms) {
         return max_backoff_ms;
