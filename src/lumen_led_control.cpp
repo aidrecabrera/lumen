@@ -11,17 +11,20 @@
 #include "lumen_board_config.h"
 #include "lumen_config_manager.h"
 #include "lumen_system_utils.h"
-#include "lumen_type_validation.h"
 
 namespace {
 static const char* TAG = "led_control";
 
 static Adafruit_NeoPixel led_strip(LED_PIXEL_COUNT, LED_DATA_PIN, NEO_GRB + NEO_KHZ800);
 
-static bool is_initialized = false;
-static LedState current_led = {};
-static DeviceMode current_mode = DeviceMode::AUTONOMOUS;
-static ThresholdConfig current_thresholds = {};
+struct ControlState {
+    DeviceMode mode;
+    ValidLedState led;
+    ValidThresholds thresholds;
+};
+
+// Empty until init() loads the persisted state. Guarded by state_mutex.
+static std::optional<ControlState> current_state;
 
 static StaticSemaphore_t state_mutex_storage;
 static SemaphoreHandle_t state_mutex = nullptr;
@@ -110,29 +113,28 @@ void applyToHardware(const LedState& led) {
     led_strip.show();
 }
 
-void loadPersistedState() {
-    const RuntimeConfig config = ConfigManager::getConfigSnapshot();
-    current_mode = config.mode;
-    current_led = config.led;
-    current_thresholds = config.thresholds;
-}
-
-bool persistRuntimeState(DeviceMode mode, const LedState& led, const ThresholdConfig& thresholds) {
+bool persistRuntimeState(const ControlState& next) {
     RuntimeConfig config = ConfigManager::getConfigSnapshot();
-    config.mode = mode;
-    config.led = led;
-    config.thresholds = thresholds;
+    config.mode = next.mode;
+    config.led = next.led;
+    config.thresholds = next.thresholds;
     return ConfigManager::saveRuntimeConfig(config);
 }
 
-void snapshotState(DeviceMode& mode, LedState& led, ThresholdConfig* thresholds = nullptr) {
+std::optional<ControlState> snapshotState() {
     lockState();
-    mode = current_mode;
-    led = current_led;
-    if (thresholds != nullptr) {
-        *thresholds = current_thresholds;
-    }
+    const std::optional<ControlState> snapshot = current_state;
     unlockState();
+    return snapshot;
+}
+
+// Before init() there is no state, so mode and led keep the caller's defaults.
+void snapshotModeAndLed(DeviceMode& mode, LedState& led) {
+    const std::optional<ControlState> snapshot = snapshotState();
+    if (snapshot) {
+        mode = snapshot->mode;
+        led = snapshot->led.raw();
+    }
 }
 
 AckMessage buildAck(
@@ -155,7 +157,7 @@ AckMessage buildAck(
 AckMessage buildAckFromCurrent(const CommandId& command_id, AckResult result, AckReason reason) {
     DeviceMode mode = DeviceMode::AUTONOMOUS;
     LedState led = {};
-    snapshotState(mode, led);
+    snapshotModeAndLed(mode, led);
     return buildAck(command_id, result, reason, mode, led);
 }
 
@@ -164,126 +166,125 @@ AckMessage rejectCommand(const CommandId& command_id, AckReason reason) {
     return buildAckFromCurrent(command_id, AckResult::REJECTED, reason);
 }
 
-AckMessage applyModeChange(const CommandId& command_id, const ModeCommand& command) {
-    DeviceMode mode_snapshot = DeviceMode::AUTONOMOUS;
-    LedState led_snapshot = {};
-    ThresholdConfig thresholds_snapshot = {};
-    snapshotState(mode_snapshot, led_snapshot, &thresholds_snapshot);
+// The apply* functions get the state snapshot that applyCommand() took after init().
+// current_state is set then, so their writes through current_state-> are safe.
+AckMessage applyModeChange(
+    const CommandId& command_id, const ModeCommand& command, const ControlState& snapshot
+) {
+    ControlState next = snapshot;
+    next.mode = command.desired_mode;
 
-    if (!persistRuntimeState(command.desired_mode, led_snapshot, thresholds_snapshot)) {
+    if (!persistRuntimeState(next)) {
         return rejectCommand(command_id, AckReason::PERSIST_FAILED);
     }
 
     lockState();
-    current_mode = command.desired_mode;
+    current_state->mode = command.desired_mode;
     unlockState();
 
     ESP_LOGI(TAG, "mode changed");
     return buildAck(
-        command_id, AckResult::APPLIED, AckReason::MODE_APPLIED, command.desired_mode, led_snapshot
+        command_id,
+        AckResult::APPLIED,
+        AckReason::MODE_APPLIED,
+        command.desired_mode,
+        snapshot.led.raw()
     );
 }
 
-AckMessage applyConfigChange(const CommandId& command_id, const ConfigCommand& command) {
-    if (!isThresholdConfigValid(command.desired_thresholds)) {
-        return rejectCommand(command_id, AckReason::BAD_THRESHOLDS);
-    }
+AckMessage applyConfigChange(
+    const CommandId& command_id, const ConfigCommand& command, const ControlState& snapshot
+) {
+    ControlState next = snapshot;
+    next.thresholds = command.desired_thresholds;
 
-    DeviceMode mode_snapshot = DeviceMode::AUTONOMOUS;
-    LedState led_snapshot = {};
-    ThresholdConfig thresholds_snapshot = {};
-    snapshotState(mode_snapshot, led_snapshot, &thresholds_snapshot);
-
-    if (!persistRuntimeState(mode_snapshot, led_snapshot, command.desired_thresholds)) {
+    if (!persistRuntimeState(next)) {
         return rejectCommand(command_id, AckReason::PERSIST_FAILED);
     }
 
     lockState();
-    current_thresholds = command.desired_thresholds;
+    current_state->thresholds = command.desired_thresholds;
     unlockState();
 
     return buildAck(
-        command_id, AckResult::APPLIED, AckReason::CONFIG_APPLIED, mode_snapshot, led_snapshot
+        command_id, AckResult::APPLIED, AckReason::CONFIG_APPLIED, snapshot.mode, snapshot.led.raw()
     );
 }
 
-AckMessage applyLedChange(const CommandId& command_id, const LedCommand& command) {
-    if (!isLedStateValid(command.desired_led)) {
-        return rejectCommand(command_id, AckReason::BAD_LED_STATE);
-    }
-
-    DeviceMode mode_snapshot = DeviceMode::AUTONOMOUS;
-    LedState led_snapshot = {};
-    ThresholdConfig thresholds_snapshot = {};
-    snapshotState(mode_snapshot, led_snapshot, &thresholds_snapshot);
-
-    if (mode_snapshot == DeviceMode::AUTONOMOUS) {
+AckMessage applyLedChange(
+    const CommandId& command_id, const LedCommand& command, const ControlState& snapshot
+) {
+    if (snapshot.mode == DeviceMode::AUTONOMOUS) {
         return rejectCommand(command_id, AckReason::MANUAL_LOCKED);
     }
 
-    if (!persistRuntimeState(mode_snapshot, command.desired_led, thresholds_snapshot)) {
+    ControlState next = snapshot;
+    next.led = command.desired_led;
+
+    if (!persistRuntimeState(next)) {
         return rejectCommand(command_id, AckReason::PERSIST_FAILED);
     }
 
     lockState();
-    current_led = command.desired_led;
+    current_state->led = command.desired_led;
     unlockState();
 
-    applyToHardware(command.desired_led);
+    applyToHardware(command.desired_led.raw());
     return buildAck(
-        command_id, AckResult::APPLIED, AckReason::LED_APPLIED, mode_snapshot, command.desired_led
+        command_id,
+        AckResult::APPLIED,
+        AckReason::LED_APPLIED,
+        snapshot.mode,
+        command.desired_led.raw()
     );
 }
 
 // std::visit needs one overload per CommandPayload alternative, so a new kind is a compile error.
 struct CommandApplier {
     const CommandId& command_id;
+    const ControlState& snapshot;
 
     AckMessage operator()(const LedCommand& command) const {
-        return applyLedChange(command_id, command);
+        return applyLedChange(command_id, command, snapshot);
     }
 
     AckMessage operator()(const ConfigCommand& command) const {
-        return applyConfigChange(command_id, command);
+        return applyConfigChange(command_id, command, snapshot);
     }
 
     AckMessage operator()(const ModeCommand& command) const {
-        return applyModeChange(command_id, command);
+        return applyModeChange(command_id, command, snapshot);
     }
 };
 }  // namespace
 
 namespace LedControl {
+// ConfigManager parsed the persisted led and thresholds, so this load needs no check.
 bool init() {
     createStateMutexOnce();
-    loadPersistedState();
-
-    if (!isLedStateValid(current_led)) {
-        ESP_LOGE(TAG, "persisted led invalid");
-        return false;
-    }
-
-    if (!isThresholdConfigValid(current_thresholds)) {
-        ESP_LOGE(TAG, "persisted thresholds invalid");
-        return false;
-    }
+    const RuntimeConfig config = ConfigManager::getConfigSnapshot();
+    const ControlState loaded = {config.mode, config.led, config.thresholds};
 
     led_strip.begin();
-    applyToHardware(current_led);
+    applyToHardware(loaded.led.raw());
 
-    is_initialized = true;
+    lockState();
+    current_state = loaded;
+    unlockState();
+
     ESP_LOGI(TAG, "led control initialized");
     return true;
 }
 
 AckMessage applyCommand(const CommandEnvelope& command) {
-    if (!is_initialized) {
+    const std::optional<ControlState> snapshot = snapshotState();
+    if (!snapshot) {
         return buildAckFromCurrent(command.command_id, AckResult::REJECTED, AckReason::NOT_READY);
     }
 
     // The payload holds only trivially copyable types, so it is never valueless and
     // std::visit cannot throw.
-    return std::visit(CommandApplier{command.command_id}, command.payload);
+    return std::visit(CommandApplier{command.command_id, *snapshot}, command.payload);
 }
 
 AckMessage buildRejectedAck(const CommandId& command_id, AckReason reason) {
@@ -294,60 +295,66 @@ AckMessage buildRejectedAck(const CommandId& command_id, AckReason reason) {
 }
 
 void controlTick(const SensorReading& latest_reading) {
-    if (!is_initialized) {
+    const std::optional<ControlState> snapshot = snapshotState();
+    if (!snapshot) {
         return;
     }
 
-    DeviceMode mode_snapshot = DeviceMode::AUTONOMOUS;
-    LedState led_snapshot = {};
-    ThresholdConfig thresholds_snapshot = {};
-    snapshotState(mode_snapshot, led_snapshot, &thresholds_snapshot);
-
-    if (mode_snapshot != DeviceMode::AUTONOMOUS) {
+    if (snapshot->mode != DeviceMode::AUTONOMOUS) {
         return;
     }
 
-    if (!led_snapshot.power) {
+    if (!snapshot->led.raw().power) {
         return;
     }
 
-    if (!isReadingWithinThresholds(latest_reading, thresholds_snapshot)) {
+    if (!isReadingWithinThresholds(latest_reading, snapshot->thresholds.raw())) {
         ESP_LOGW(TAG, "autonomous reading outside thresholds, holding brightness");
         return;
     }
 
     const uint8_t next_brightness_pct = computeAutonomousBrightness(latest_reading.light_lux);
 
-    if (next_brightness_pct == led_snapshot.brightness_pct) {
+    if (next_brightness_pct == snapshot->led.raw().brightness_pct) {
         return;
     }
 
+    // clampBrightness() keeps the value at 100 or less, so this parse fails only on a code bug.
     lockState();
-    current_led.brightness_pct = next_brightness_pct;
-    led_snapshot = current_led;
+    LedState next_led = current_state->led.raw();
+    next_led.brightness_pct = next_brightness_pct;
+    const std::optional<ValidLedState> valid_next_led = ValidLedState::parse(next_led);
+    if (valid_next_led) {
+        current_state->led = *valid_next_led;
+    }
     unlockState();
 
-    applyToHardware(led_snapshot);
+    if (!valid_next_led) {
+        ESP_LOGE(TAG, "autonomous brightness %u rejected", next_brightness_pct);
+        return;
+    }
+
+    applyToHardware(next_led);
 }
 
 LedState getCurrentLedState() {
     DeviceMode ignored_mode = DeviceMode::AUTONOMOUS;
     LedState led = {};
-    snapshotState(ignored_mode, led);
+    snapshotModeAndLed(ignored_mode, led);
     return led;
 }
 
 DeviceMode getCurrentMode() {
     DeviceMode mode = DeviceMode::AUTONOMOUS;
     LedState ignored_led = {};
-    snapshotState(mode, ignored_led);
+    snapshotModeAndLed(mode, ignored_led);
     return mode;
 }
 
 StatusMessage buildStatusMessage(DegradedTier degraded_tier) {
     DeviceMode mode = DeviceMode::AUTONOMOUS;
     LedState led = {};
-    snapshotState(mode, led);
+    snapshotModeAndLed(mode, led);
 
     StatusMessage status = {};
     status.timestamp_ms = getNowMs();

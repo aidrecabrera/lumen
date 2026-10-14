@@ -13,25 +13,46 @@ bool isCommandIdChar(char value) {
 }
 }  // namespace
 
-bool isThresholdConfigValid(const ThresholdConfig& thresholds) {
-    if (!isfinite(thresholds.temp_min_c) || !isfinite(thresholds.temp_max_c) ||
-        !isfinite(thresholds.humidity_min_pct) || !isfinite(thresholds.humidity_max_pct)) {
-        return false;
+std::optional<ValidThresholds> ValidThresholds::parse(const ThresholdConfig& raw) {
+    if (!isfinite(raw.temp_min_c) || !isfinite(raw.temp_max_c) || !isfinite(raw.humidity_min_pct) ||
+        !isfinite(raw.humidity_max_pct)) {
+        return std::nullopt;
     }
 
-    return (thresholds.temp_min_c <= thresholds.temp_max_c) &&
-           (thresholds.humidity_min_pct <= thresholds.humidity_max_pct);
+    if (raw.temp_min_c > raw.temp_max_c) {
+        return std::nullopt;
+    }
+
+    if (raw.humidity_min_pct > raw.humidity_max_pct) {
+        return std::nullopt;
+    }
+
+    return ValidThresholds(raw);
 }
 
-bool isLedStateValid(const LedState& led) {
-    const uint16_t total_pct = static_cast<uint16_t>(led.red_dist_pct) +
-                               static_cast<uint16_t>(led.blue_dist_pct) +
-                               static_cast<uint16_t>(led.far_red_dist_pct);
+std::optional<ValidLedState> ValidLedState::parse(const LedState& raw) {
+    const uint16_t total_pct = static_cast<uint16_t>(raw.red_dist_pct) +
+                               static_cast<uint16_t>(raw.blue_dist_pct) +
+                               static_cast<uint16_t>(raw.far_red_dist_pct);
 
-    return (led.brightness_pct <= 100U) && (total_pct == 100U);
+    if (raw.brightness_pct > 100U) {
+        return std::nullopt;
+    }
+
+    if (total_pct != 100U) {
+        return std::nullopt;
+    }
+
+    return ValidLedState(raw);
 }
 
-bool isEnergyTotalValid(float total_wh) { return isfinite(total_wh) && (total_wh >= 0.0f); }
+std::optional<EnergyTotalWh> EnergyTotalWh::parse(float raw_wh) {
+    if (!isfinite(raw_wh) || raw_wh < 0.0f) {
+        return std::nullopt;
+    }
+
+    return EnergyTotalWh(raw_wh);
+}
 
 bool parseDeviceMode(uint8_t raw_mode, DeviceMode& out_mode) {
     if (raw_mode == static_cast<uint8_t>(DeviceMode::AUTONOMOUS)) {

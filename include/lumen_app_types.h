@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <optional>
 #include <variant>
 
 static constexpr size_t DEVICE_ID_MAX_LEN = 24U;
@@ -22,8 +23,6 @@ enum class AckReason : uint8_t {
     LED_APPLIED,
     NOT_READY,
     PERSIST_FAILED,
-    BAD_THRESHOLDS,
-    BAD_LED_STATE,
     MANUAL_LOCKED,
     INVALID_PAYLOAD,
     COMMAND_QUEUE_FULL,
@@ -42,10 +41,6 @@ inline const char* ackReasonText(AckReason reason) {
             return "not ready";
         case AckReason::PERSIST_FAILED:
             return "persist failed";
-        case AckReason::BAD_THRESHOLDS:
-            return "bad thresholds";
-        case AckReason::BAD_LED_STATE:
-            return "bad led state";
         case AckReason::MANUAL_LOCKED:
             return "manual locked";
         case AckReason::INVALID_PAYLOAD:
@@ -98,12 +93,52 @@ struct LedState {
     uint8_t far_red_dist_pct;
 };
 
+// The Valid* types below hold a value that passed its parse(). Only parse() (implemented in
+// lumen_type_validation.cpp) creates one, so code that takes a Valid* type needs no re-check.
+// raw() gives the plain struct for encode and persist.
+
+// All four values finite, temp_min_c <= temp_max_c, humidity_min_pct <= humidity_max_pct.
+class ValidThresholds {
+   public:
+    static std::optional<ValidThresholds> parse(const ThresholdConfig& raw);
+    const ThresholdConfig& raw() const { return raw_; }
+
+   private:
+    explicit ValidThresholds(const ThresholdConfig& raw) : raw_(raw) {}
+
+    ThresholdConfig raw_;
+};
+
+// brightness_pct <= 100 and the three distribution percents sum to 100.
+class ValidLedState {
+   public:
+    static std::optional<ValidLedState> parse(const LedState& raw);
+    const LedState& raw() const { return raw_; }
+
+   private:
+    explicit ValidLedState(const LedState& raw) : raw_(raw) {}
+
+    LedState raw_;
+};
+
+// Finite and >= 0.
+class EnergyTotalWh {
+   public:
+    static std::optional<EnergyTotalWh> parse(float raw_wh);
+    float raw() const { return raw_wh_; }
+
+   private:
+    explicit EnergyTotalWh(float raw_wh) : raw_wh_(raw_wh) {}
+
+    float raw_wh_;
+};
+
 struct RuntimeConfig {
     char device_id[DEVICE_ID_MAX_LEN];
     DeviceMode mode;
-    ThresholdConfig thresholds;
-    LedState led;
-    float energy_total_wh;
+    ValidThresholds thresholds;
+    ValidLedState led;
+    EnergyTotalWh energy_total_wh;
 };
 
 struct SensorReading {
@@ -123,19 +158,20 @@ struct StatusMessage {
 };
 
 struct LedCommand {
-    LedState desired_led;
+    ValidLedState desired_led;
 };
 
 struct ConfigCommand {
-    ThresholdConfig desired_thresholds;
+    ValidThresholds desired_thresholds;
 };
 
 struct ModeCommand {
     DeviceMode desired_mode;
 };
 
-// Each command kind carries only its own payload.
-using CommandPayload = std::variant<LedCommand, ConfigCommand, ModeCommand>;
+// Each command kind carries only its own payload. ModeCommand is first because a default
+// std::variant holds its first alternative, and only ModeCommand has a default value.
+using CommandPayload = std::variant<ModeCommand, LedCommand, ConfigCommand>;
 
 struct CommandEnvelope {
     CommandId command_id;

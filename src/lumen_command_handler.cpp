@@ -142,12 +142,13 @@ DecodeStatus decodeLedPayload(
         return DecodeStatus::INVALID_FIELDS;
     }
 
-    if (!isLedStateValid(led)) {
+    const std::optional<ValidLedState> valid_led = ValidLedState::parse(led);
+    if (!valid_led) {
         ESP_LOGW(TAG, "led payload invalid");
         return DecodeStatus::INVALID_FIELDS;
     }
 
-    out_command.payload = LedCommand{led};
+    out_command.payload = LedCommand{*valid_led};
     return DecodeStatus::DECODED;
 }
 
@@ -180,12 +181,13 @@ DecodeStatus decodeConfigPayload(
         return DecodeStatus::INVALID_FIELDS;
     }
 
-    if (!isThresholdConfigValid(thresholds)) {
+    const std::optional<ValidThresholds> valid_thresholds = ValidThresholds::parse(thresholds);
+    if (!valid_thresholds) {
         ESP_LOGW(TAG, "threshold payload invalid");
         return DecodeStatus::INVALID_FIELDS;
     }
 
-    out_command.payload = ConfigCommand{thresholds};
+    out_command.payload = ConfigCommand{*valid_thresholds};
     return DecodeStatus::DECODED;
 }
 

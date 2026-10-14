@@ -5,9 +5,8 @@
 
 #include "lumen_app_types.h"
 
-bool isThresholdConfigValid(const ThresholdConfig& thresholds);
-bool isLedStateValid(const LedState& led);
-bool isEnergyTotalValid(float total_wh);
+// ValidThresholds::parse, ValidLedState::parse and EnergyTotalWh::parse (lumen_app_types.h)
+// are implemented in lumen_type_validation.cpp.
 bool parseDeviceMode(uint8_t raw_mode, DeviceMode& out_mode);
 
 // Accepts 1 to COMMAND_ID_MAX_LEN - 1 characters from [A-Za-z0-9_-]. length is the byte count

@@ -36,8 +36,28 @@ static_assert(
     "PersistedRuntimeConfig layout changed, NVS blob will break"
 );
 
+constexpr ThresholdConfig DEFAULT_THRESHOLDS = {18.0f, 28.0f, 60.0f, 80.0f};
+
+// power, brightness_pct, red/blue/far_red enabled, red/blue/far_red dist_pct.
+constexpr LedState DEFAULT_LED_STATE = {true, 50U, true, true, true, 40U, 35U, 25U};
+
+constexpr float DEFAULT_ENERGY_TOTAL_WH = 0.0f;
+
+// The defaults are constants, so parse() fails only after a bad edit to them. value() then
+// throws, and the throw stops the firmware at startup instead of running with a bad default.
+// device_id stays empty here; applyDefaultConfig() sets it.
+RuntimeConfig buildDefaultConfig() {
+    return RuntimeConfig{
+        {},
+        DeviceMode::AUTONOMOUS,
+        ValidThresholds::parse(DEFAULT_THRESHOLDS).value(),
+        ValidLedState::parse(DEFAULT_LED_STATE).value(),
+        EnergyTotalWh::parse(DEFAULT_ENERGY_TOTAL_WH).value(),
+    };
+}
+
 static Preferences preferences;
-static RuntimeConfig runtime_config = {};
+static RuntimeConfig runtime_config = buildDefaultConfig();
 static bool is_initialized = false;
 static bool has_nvs = false;
 static StaticSemaphore_t config_mutex_storage;
@@ -55,28 +75,6 @@ void lockConfig() {
 
 // Only called after lockConfig(), which created the mutex.
 void unlockConfig() { xSemaphoreGive(config_mutex); }
-
-ThresholdConfig buildDefaultThresholds() {
-    ThresholdConfig thresholds = {};
-    thresholds.temp_min_c = 18.0f;
-    thresholds.temp_max_c = 28.0f;
-    thresholds.humidity_min_pct = 60.0f;
-    thresholds.humidity_max_pct = 80.0f;
-    return thresholds;
-}
-
-LedState buildDefaultLedState() {
-    LedState led = {};
-    led.power = true;
-    led.brightness_pct = 50U;
-    led.red_enabled = true;
-    led.blue_enabled = true;
-    led.far_red_enabled = true;
-    led.red_dist_pct = 40U;
-    led.blue_dist_pct = 35U;
-    led.far_red_dist_pct = 25U;
-    return led;
-}
 
 bool generateDeviceId(char* out_device_id, size_t out_len) {
     uint8_t base_mac[6] = {};
@@ -108,11 +106,7 @@ bool generateDeviceId(char* out_device_id, size_t out_len) {
 }
 
 void applyDefaultConfig(RuntimeConfig& config) {
-    memset(&config, 0, sizeof(config));
-    config.mode = DeviceMode::AUTONOMOUS;
-    config.thresholds = buildDefaultThresholds();
-    config.led = buildDefaultLedState();
-    config.energy_total_wh = 0.0f;
+    config = buildDefaultConfig();
 
     if (!generateDeviceId(config.device_id, sizeof(config.device_id))) {
         copyText(config.device_id, sizeof(config.device_id), "lumen-unknown");
@@ -133,8 +127,8 @@ bool hasTextInBuffer(const char* text, size_t max_len) {
     return (text != nullptr) && (strnlen(text, max_len) < max_len) && (text[0] != '\0');
 }
 
-// Callers validate before writing: the public save* functions check thresholds and led,
-// and device_id is always set by applyDefaultConfig() or copied only when valid.
+// The thresholds and led are valid by type. device_id is always set by applyDefaultConfig()
+// or copied only when valid.
 bool writeRuntimeConfigBlob(const RuntimeConfig& config) {
     if (!has_nvs) {
         ESP_LOGW(TAG, "nvs unavailable");
@@ -144,8 +138,8 @@ bool writeRuntimeConfigBlob(const RuntimeConfig& config) {
     PersistedRuntimeConfig persisted = {};
     copyText(persisted.device_id, sizeof(persisted.device_id), config.device_id);
     persisted.mode = static_cast<uint8_t>(config.mode);
-    persisted.thresholds = config.thresholds;
-    persisted.led = config.led;
+    persisted.thresholds = config.thresholds.raw();
+    persisted.led = config.led.raw();
 
     const size_t written = preferences.putBytes(KEY_RUNTIME_CFG, &persisted, sizeof(persisted));
 
@@ -157,14 +151,13 @@ bool writeRuntimeConfigBlob(const RuntimeConfig& config) {
     return true;
 }
 
-// Callers validate total_wh: saveEnergyTotal() checks it, loadDefaults() writes 0.
-bool writeEnergyTotal(float total_wh) {
+bool writeEnergyTotal(EnergyTotalWh total_wh) {
     if (!has_nvs) {
         ESP_LOGW(TAG, "nvs unavailable");
         return false;
     }
 
-    const size_t written = preferences.putFloat(KEY_ENERGY_WH, total_wh);
+    const size_t written = preferences.putFloat(KEY_ENERGY_WH, total_wh.raw());
     if (written == 0U) {
         ESP_LOGE(TAG, "energy write failed");
         return false;
@@ -189,14 +182,16 @@ bool loadRuntimeConfigBlob(RuntimeConfig& config) {
 
     config.mode = sanitizeMode(persisted.mode);
 
-    if (isThresholdConfigValid(persisted.thresholds)) {
-        config.thresholds = persisted.thresholds;
+    const std::optional<ValidThresholds> thresholds = ValidThresholds::parse(persisted.thresholds);
+    if (thresholds) {
+        config.thresholds = *thresholds;
     } else {
         ESP_LOGW(TAG, "invalid thresholds in blob, using default");
     }
 
-    if (isLedStateValid(persisted.led)) {
-        config.led = persisted.led;
+    const std::optional<ValidLedState> led = ValidLedState::parse(persisted.led);
+    if (led) {
+        config.led = *led;
     } else {
         ESP_LOGW(TAG, "invalid led state in blob, using default");
     }
@@ -215,10 +210,11 @@ bool commitRuntimeConfigLocked(const RuntimeConfig& next) {
 }
 
 void loadEnergyTotal(RuntimeConfig& config) {
-    const float stored = preferences.getFloat(KEY_ENERGY_WH, config.energy_total_wh);
+    const float stored = preferences.getFloat(KEY_ENERGY_WH, config.energy_total_wh.raw());
 
-    if (isEnergyTotalValid(stored)) {
-        config.energy_total_wh = stored;
+    const std::optional<EnergyTotalWh> total_wh = EnergyTotalWh::parse(stored);
+    if (total_wh) {
+        config.energy_total_wh = *total_wh;
     } else {
         ESP_LOGW(TAG, "invalid energy total in nvs, using default");
     }
@@ -264,19 +260,13 @@ bool loadDefaults() {
 }
 
 RuntimeConfig getConfigSnapshot() {
-    RuntimeConfig snapshot = {};
     lockConfig();
-    snapshot = runtime_config;
+    const RuntimeConfig snapshot = runtime_config;
     unlockConfig();
     return snapshot;
 }
 
-bool saveThresholds(const ThresholdConfig& thresholds) {
-    if (!isThresholdConfigValid(thresholds)) {
-        ESP_LOGW(TAG, "threshold save rejected");
-        return false;
-    }
-
+bool saveThresholds(const ValidThresholds& thresholds) {
     lockConfig();
     RuntimeConfig next = runtime_config;
     next.thresholds = thresholds;
@@ -294,12 +284,7 @@ bool saveMode(DeviceMode mode) {
     return ok;
 }
 
-bool saveLedState(const LedState& led) {
-    if (!isLedStateValid(led)) {
-        ESP_LOGW(TAG, "led save rejected");
-        return false;
-    }
-
+bool saveLedState(const ValidLedState& led) {
     lockConfig();
     RuntimeConfig next = runtime_config;
     next.led = led;
@@ -308,12 +293,7 @@ bool saveLedState(const LedState& led) {
     return ok;
 }
 
-bool saveEnergyTotal(float total_wh) {
-    if (!isEnergyTotalValid(total_wh)) {
-        ESP_LOGW(TAG, "energy save rejected");
-        return false;
-    }
-
+bool saveEnergyTotal(EnergyTotalWh total_wh) {
     lockConfig();
     if (!writeEnergyTotal(total_wh)) {
         unlockConfig();
@@ -326,11 +306,6 @@ bool saveEnergyTotal(float total_wh) {
 }
 
 bool saveRuntimeConfig(const RuntimeConfig& config) {
-    if (!isThresholdConfigValid(config.thresholds) || !isLedStateValid(config.led)) {
-        ESP_LOGW(TAG, "runtime config save rejected: invalid payload");
-        return false;
-    }
-
     lockConfig();
     RuntimeConfig next = runtime_config;
     next.mode = config.mode;

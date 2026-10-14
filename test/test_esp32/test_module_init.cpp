@@ -15,10 +15,6 @@ static ThresholdConfig makeValidThresholds() {
     return ThresholdConfig{18.0f, 28.0f, 40.0f, 70.0f};
 }
 
-static ThresholdConfig makeInvalidThresholds() {
-    return ThresholdConfig{30.0f, 20.0f, 40.0f, 70.0f};
-}
-
 static LedState makeValidLed(uint8_t brightness_pct = 50U) {
     return LedState{
         true,
@@ -49,6 +45,24 @@ static void assertLedEqual(const LedState& expected, const LedState& actual) {
     TEST_ASSERT_EQUAL_UINT8(expected.far_red_dist_pct, actual.far_red_dist_pct);
 }
 
+static ValidLedState requireValidLed(const LedState& led) {
+    const std::optional<ValidLedState> parsed = ValidLedState::parse(led);
+    TEST_ASSERT_TRUE(parsed.has_value());
+    return *parsed;
+}
+
+static ValidThresholds requireValidThresholds(const ThresholdConfig& thresholds) {
+    const std::optional<ValidThresholds> parsed = ValidThresholds::parse(thresholds);
+    TEST_ASSERT_TRUE(parsed.has_value());
+    return *parsed;
+}
+
+static EnergyTotalWh requireValidEnergyTotal(float total_wh) {
+    const std::optional<EnergyTotalWh> parsed = EnergyTotalWh::parse(total_wh);
+    TEST_ASSERT_TRUE(parsed.has_value());
+    return *parsed;
+}
+
 static CommandEnvelope makeModeCommand(const char* id, DeviceMode desired_mode) {
     CommandEnvelope cmd{};
     TEST_ASSERT_TRUE(parseCommandId(id, std::strlen(id), cmd.command_id));
@@ -59,22 +73,15 @@ static CommandEnvelope makeModeCommand(const char* id, DeviceMode desired_mode) 
 static CommandEnvelope makeLedCommand(const char* id, const LedState& desired_led) {
     CommandEnvelope cmd{};
     TEST_ASSERT_TRUE(parseCommandId(id, std::strlen(id), cmd.command_id));
-    cmd.payload = LedCommand{desired_led};
-    return cmd;
-}
-
-static CommandEnvelope makeConfigCommand(const char* id, const ThresholdConfig& thresholds) {
-    CommandEnvelope cmd{};
-    TEST_ASSERT_TRUE(parseCommandId(id, std::strlen(id), cmd.command_id));
-    cmd.payload = ConfigCommand{thresholds};
+    cmd.payload = LedCommand{requireValidLed(desired_led)};
     return cmd;
 }
 
 static void prepareLedControl(DeviceMode initial_mode) {
     TEST_ASSERT_TRUE(ConfigManager::init());
     TEST_ASSERT_TRUE(ConfigManager::loadDefaults());
-    TEST_ASSERT_TRUE(ConfigManager::saveThresholds(makeValidThresholds()));
-    TEST_ASSERT_TRUE(ConfigManager::saveLedState(makeValidLed(25U)));
+    TEST_ASSERT_TRUE(ConfigManager::saveThresholds(requireValidThresholds(makeValidThresholds())));
+    TEST_ASSERT_TRUE(ConfigManager::saveLedState(requireValidLed(makeValidLed(25U))));
     TEST_ASSERT_TRUE(ConfigManager::saveMode(initial_mode));
     TEST_ASSERT_TRUE(LedControl::init());
 }
@@ -82,7 +89,7 @@ static void prepareLedControl(DeviceMode initial_mode) {
 static void prepareEnergyTracker(float starting_total_wh) {
     TEST_ASSERT_TRUE(ConfigManager::init());
     TEST_ASSERT_TRUE(ConfigManager::loadDefaults());
-    TEST_ASSERT_TRUE(ConfigManager::saveEnergyTotal(starting_total_wh));
+    TEST_ASSERT_TRUE(ConfigManager::saveEnergyTotal(requireValidEnergyTotal(starting_total_wh)));
     TEST_ASSERT_TRUE(EnergyTracker::init());
 }
 
@@ -177,19 +184,6 @@ void test_led_control_accepts_valid_led_command_in_manual_mode() {
         static_cast<uint8_t>(ack.result)
     );
     assertLedEqual(desired, actual);
-}
-
-void test_led_control_rejects_invalid_config_command() {
-    prepareLedControl(DeviceMode::MANUAL);
-
-    const AckMessage ack = LedControl::applyCommand(
-        makeConfigCommand("ack-cfg-invalid", makeInvalidThresholds())
-    );
-
-    TEST_ASSERT_EQUAL_UINT8(
-        static_cast<uint8_t>(AckResult::REJECTED),
-        static_cast<uint8_t>(ack.result)
-    );
 }
 
 void test_led_control_buildStatusMessage_reflects_runtime_state() {

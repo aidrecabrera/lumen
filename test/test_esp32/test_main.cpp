@@ -15,7 +15,6 @@ void test_led_control_init_succeeds();
 void test_led_control_rejects_manual_led_command_in_autonomous_mode();
 void test_led_control_mode_change_command_applies();
 void test_led_control_accepts_valid_led_command_in_manual_mode();
-void test_led_control_rejects_invalid_config_command();
 void test_led_control_buildStatusMessage_reflects_runtime_state();
 void test_led_control_autonomous_holds_brightness_outside_thresholds();
 void test_energy_tracker_init_succeeds();
@@ -94,7 +93,6 @@ void setup() {
     RUN_TEST(test_led_control_rejects_manual_led_command_in_autonomous_mode);
     RUN_TEST(test_led_control_mode_change_command_applies);
     RUN_TEST(test_led_control_accepts_valid_led_command_in_manual_mode);
-    RUN_TEST(test_led_control_rejects_invalid_config_command);
     RUN_TEST(test_led_control_buildStatusMessage_reflects_runtime_state);
     RUN_TEST(test_led_control_autonomous_holds_brightness_outside_thresholds);
 

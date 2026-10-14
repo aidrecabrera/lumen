@@ -26,6 +26,10 @@ void test_energy_total_positive_valid();
 void test_energy_total_negative_invalid();
 void test_energy_total_nan_invalid();
 void test_energy_total_inf_invalid();
+void test_threshold_parse_keeps_raw_values();
+void test_led_parse_keeps_raw_values();
+void test_led_parse_rejects_uint8_wrapping_sum();
+void test_energy_total_parse_keeps_raw_value();
 
 // test_system_utils.cpp
 void test_copyText_normal_copy();
@@ -78,6 +82,10 @@ int main() {
     RUN_TEST(test_energy_total_negative_invalid);
     RUN_TEST(test_energy_total_nan_invalid);
     RUN_TEST(test_energy_total_inf_invalid);
+    RUN_TEST(test_threshold_parse_keeps_raw_values);
+    RUN_TEST(test_led_parse_keeps_raw_values);
+    RUN_TEST(test_led_parse_rejects_uint8_wrapping_sum);
+    RUN_TEST(test_energy_total_parse_keeps_raw_value);
 
     RUN_TEST(test_copyText_normal_copy);
     RUN_TEST(test_copyText_exact_fit_copy);

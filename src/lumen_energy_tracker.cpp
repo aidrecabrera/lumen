@@ -6,7 +6,6 @@
 #include "lumen_board_config.h"
 #include "lumen_config_manager.h"
 #include "lumen_system_utils.h"
-#include "lumen_type_validation.h"
 
 namespace {
 static const char* TAG = "energy_tracker";
@@ -68,12 +67,7 @@ namespace EnergyTracker {
 bool init() {
     const RuntimeConfig config = ConfigManager::getConfigSnapshot();
 
-    if (!isEnergyTotalValid(config.energy_total_wh)) {
-        ESP_LOGE(TAG, "persisted energy invalid");
-        return false;
-    }
-
-    total_wh = config.energy_total_wh;
+    total_wh = config.energy_total_wh.raw();
     session_wh = 0.0f;
     light_on_ms = 0;
     max_brightness_ms = 0;
@@ -138,7 +132,14 @@ bool requestPersist() {
         return true;
     }
 
-    if (!ConfigManager::saveEnergyTotal(total_wh)) {
+    // total_wh only grows from a valid start, but a float sum can overflow to infinity.
+    const std::optional<EnergyTotalWh> valid_total_wh = EnergyTotalWh::parse(total_wh);
+    if (!valid_total_wh) {
+        ESP_LOGW(TAG, "energy total invalid, not persisted");
+        return false;
+    }
+
+    if (!ConfigManager::saveEnergyTotal(*valid_total_wh)) {
         ESP_LOGW(TAG, "energy persist failed");
         return false;
     }

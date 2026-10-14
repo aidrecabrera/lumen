@@ -635,14 +635,14 @@ void test_command_handler_decodes_valid_led_payload() {
     TEST_ASSERT_EQUAL_STRING("cmd-led-1", command.command_id.c_str());
     const LedCommand* led = std::get_if<LedCommand>(&command.payload);
     TEST_ASSERT_NOT_NULL(led);
-    TEST_ASSERT_TRUE(led->desired_led.power);
-    TEST_ASSERT_EQUAL_UINT8(55, led->desired_led.brightness_pct);
-    TEST_ASSERT_TRUE(led->desired_led.red_enabled);
-    TEST_ASSERT_TRUE(led->desired_led.blue_enabled);
-    TEST_ASSERT_TRUE(led->desired_led.far_red_enabled);
-    TEST_ASSERT_EQUAL_UINT8(34, led->desired_led.red_dist_pct);
-    TEST_ASSERT_EQUAL_UINT8(33, led->desired_led.blue_dist_pct);
-    TEST_ASSERT_EQUAL_UINT8(33, led->desired_led.far_red_dist_pct);
+    TEST_ASSERT_TRUE(led->desired_led.raw().power);
+    TEST_ASSERT_EQUAL_UINT8(55, led->desired_led.raw().brightness_pct);
+    TEST_ASSERT_TRUE(led->desired_led.raw().red_enabled);
+    TEST_ASSERT_TRUE(led->desired_led.raw().blue_enabled);
+    TEST_ASSERT_TRUE(led->desired_led.raw().far_red_enabled);
+    TEST_ASSERT_EQUAL_UINT8(34, led->desired_led.raw().red_dist_pct);
+    TEST_ASSERT_EQUAL_UINT8(33, led->desired_led.raw().blue_dist_pct);
+    TEST_ASSERT_EQUAL_UINT8(33, led->desired_led.raw().far_red_dist_pct);
 }
 
 void test_command_handler_decodes_valid_config_payload() {
@@ -662,10 +662,10 @@ void test_command_handler_decodes_valid_config_payload() {
     TEST_ASSERT_EQUAL_STRING("cmd-cfg-ok", command.command_id.c_str());
     const ConfigCommand* config = std::get_if<ConfigCommand>(&command.payload);
     TEST_ASSERT_NOT_NULL(config);
-    TEST_ASSERT_EQUAL_FLOAT(18.5f, config->desired_thresholds.temp_min_c);
-    TEST_ASSERT_EQUAL_FLOAT(30.0f, config->desired_thresholds.temp_max_c);
-    TEST_ASSERT_EQUAL_FLOAT(40.0f, config->desired_thresholds.humidity_min_pct);
-    TEST_ASSERT_EQUAL_FLOAT(70.0f, config->desired_thresholds.humidity_max_pct);
+    TEST_ASSERT_EQUAL_FLOAT(18.5f, config->desired_thresholds.raw().temp_min_c);
+    TEST_ASSERT_EQUAL_FLOAT(30.0f, config->desired_thresholds.raw().temp_max_c);
+    TEST_ASSERT_EQUAL_FLOAT(40.0f, config->desired_thresholds.raw().humidity_min_pct);
+    TEST_ASSERT_EQUAL_FLOAT(70.0f, config->desired_thresholds.raw().humidity_max_pct);
 }
 
 void test_command_handler_decodes_valid_mode_payload() {

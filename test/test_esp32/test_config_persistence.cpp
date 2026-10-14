@@ -38,6 +38,24 @@ static void assertLedEqual(const LedState& expected, const LedState& actual) {
     TEST_ASSERT_EQUAL_UINT8(expected.far_red_dist_pct, actual.far_red_dist_pct);
 }
 
+static ValidLedState requireValidLed(const LedState& led) {
+    const std::optional<ValidLedState> parsed = ValidLedState::parse(led);
+    TEST_ASSERT_TRUE(parsed.has_value());
+    return *parsed;
+}
+
+static ValidThresholds requireValidThresholds(const ThresholdConfig& thresholds) {
+    const std::optional<ValidThresholds> parsed = ValidThresholds::parse(thresholds);
+    TEST_ASSERT_TRUE(parsed.has_value());
+    return *parsed;
+}
+
+static EnergyTotalWh requireValidEnergyTotal(float total_wh) {
+    const std::optional<EnergyTotalWh> parsed = EnergyTotalWh::parse(total_wh);
+    TEST_ASSERT_TRUE(parsed.has_value());
+    return *parsed;
+}
+
 void test_config_save_and_readback_mode() {
     TEST_ASSERT_TRUE(ConfigManager::init());
     TEST_ASSERT_TRUE(ConfigManager::loadDefaults());
@@ -55,10 +73,10 @@ void test_config_save_and_readback_led_state() {
 
     TEST_ASSERT_TRUE(ConfigManager::init());
     TEST_ASSERT_TRUE(ConfigManager::loadDefaults());
-    TEST_ASSERT_TRUE(ConfigManager::saveLedState(led));
+    TEST_ASSERT_TRUE(ConfigManager::saveLedState(requireValidLed(led)));
 
     const RuntimeConfig cfg = ConfigManager::getConfigSnapshot();
-    assertLedEqual(led, cfg.led);
+    assertLedEqual(led, cfg.led.raw());
 }
 
 void test_config_save_and_readback_thresholds() {
@@ -66,10 +84,10 @@ void test_config_save_and_readback_thresholds() {
 
     TEST_ASSERT_TRUE(ConfigManager::init());
     TEST_ASSERT_TRUE(ConfigManager::loadDefaults());
-    TEST_ASSERT_TRUE(ConfigManager::saveThresholds(thresholds));
+    TEST_ASSERT_TRUE(ConfigManager::saveThresholds(requireValidThresholds(thresholds)));
 
     const RuntimeConfig cfg = ConfigManager::getConfigSnapshot();
-    assertThresholdsEqual(thresholds, cfg.thresholds);
+    assertThresholdsEqual(thresholds, cfg.thresholds.raw());
 }
 
 void test_config_save_and_readback_energy_total() {
@@ -77,10 +95,10 @@ void test_config_save_and_readback_energy_total() {
 
     TEST_ASSERT_TRUE(ConfigManager::init());
     TEST_ASSERT_TRUE(ConfigManager::loadDefaults());
-    TEST_ASSERT_TRUE(ConfigManager::saveEnergyTotal(expected_wh));
+    TEST_ASSERT_TRUE(ConfigManager::saveEnergyTotal(requireValidEnergyTotal(expected_wh)));
 
     const RuntimeConfig cfg = ConfigManager::getConfigSnapshot();
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, expected_wh, cfg.energy_total_wh);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, expected_wh, cfg.energy_total_wh.raw());
 }
 
 void test_config_values_survive_reinit_equivalent() {
@@ -92,9 +110,9 @@ void test_config_values_survive_reinit_equivalent() {
     TEST_ASSERT_TRUE(ConfigManager::init());
     TEST_ASSERT_TRUE(ConfigManager::loadDefaults());
     TEST_ASSERT_TRUE(ConfigManager::saveMode(expected_mode));
-    TEST_ASSERT_TRUE(ConfigManager::saveLedState(led));
-    TEST_ASSERT_TRUE(ConfigManager::saveThresholds(thresholds));
-    TEST_ASSERT_TRUE(ConfigManager::saveEnergyTotal(expected_wh));
+    TEST_ASSERT_TRUE(ConfigManager::saveLedState(requireValidLed(led)));
+    TEST_ASSERT_TRUE(ConfigManager::saveThresholds(requireValidThresholds(thresholds)));
+    TEST_ASSERT_TRUE(ConfigManager::saveEnergyTotal(requireValidEnergyTotal(expected_wh)));
 
     TEST_ASSERT_TRUE_MESSAGE(
         ConfigManager::init(),
@@ -106,7 +124,7 @@ void test_config_values_survive_reinit_equivalent() {
         static_cast<uint8_t>(expected_mode),
         static_cast<uint8_t>(cfg.mode)
     );
-    assertLedEqual(led, cfg.led);
-    assertThresholdsEqual(thresholds, cfg.thresholds);
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, expected_wh, cfg.energy_total_wh);
+    assertLedEqual(led, cfg.led.raw());
+    assertThresholdsEqual(thresholds, cfg.thresholds.raw());
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, expected_wh, cfg.energy_total_wh.raw());
 }
