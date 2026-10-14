@@ -135,14 +135,6 @@
             background-color: rgba(0, 0, 0, 0.02);
         }
 
-        .alert-item.alert-critical {
-            border-left-color: var(--bs-danger);
-        }
-
-        .alert-item.alert-warning {
-            border-left-color: var(--bs-warning);
-        }
-
         .alert-item.alert-info {
             border-left-color: var(--bs-info);
         }
@@ -917,7 +909,7 @@
                     color: "#ff4757",
                 });
                 showToast("Optimized for Growth", "success");
-                addAlert("System optimized for growth", "info", "Optimization");
+                addAlert("System optimized for growth", "Optimization");
             });
             document.getElementById("nightModeBtn").addEventListener("click", function() {
                 applyLightPreset({
@@ -1109,12 +1101,11 @@
             }
         }
 
-        function addAlert(msg, type, title) {
+        function addAlert(msg, title) {
             appState.alerts.unshift({
                 id: ++appState.alertIdCounter,
-                title: title || "Alert",
+                title: title,
                 message: msg,
-                severity: type,
                 timestamp: Date.now(),
             });
             updateAlertsUI();
@@ -1129,7 +1120,7 @@
                 list.innerHTML = `<div class="empty-state"><i class="ph ph-check-circle fs-1 text-success"></i><p class="mt-2 mb-0">No alerts</p></div>`;
             } else {
                 list.innerHTML = appState.alerts.map((a) => `
-<div class="alert-item alert-${escapeHTML(a.severity)} p-3 mb-2 rounded bg-body-secondary"><strong>${escapeHTML(a.title)}</strong><p class="small mb-0">${escapeHTML(a.message)}</p></div>
+<div class="alert-item alert-info p-3 mb-2 rounded bg-body-secondary"><strong>${escapeHTML(a.title)}</strong><p class="small mb-0">${escapeHTML(a.message)}</p></div>
 `).join("");
             }
         }
