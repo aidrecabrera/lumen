@@ -216,7 +216,7 @@ At the platform level, it has a controller node, a sensor layer, an actuation la
 - **Sensors**
   - ambient light sensing
   - temperature and humidity sensing
-  - spectral light sensing
+  - spectral light sensing (planned)
 
 - **Actuation**
   - addressable LED lighting output
@@ -474,7 +474,7 @@ Queues help by:
 
 - isolating responsibilities
 - reducing direct coupling
-- allowing one task to fail or stall without turning every module into shared spaghetti
+- letting a slow MQTT reconnect run without blocking sensor reads or LED control (a task that stalls for 10 s still trips the watchdog and resets the chip)
 - making data flow explicit
 
 That is one of the key design decisions in the firmware.

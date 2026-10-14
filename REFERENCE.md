@@ -76,17 +76,15 @@ That common ground is required for stable LED data [[10]](#references).
 | GND | ESP32 GND | GND |
 | SDA | ESP32 GPIO21 | I2C_SDA |
 | SCL | ESP32 GPIO22 | I2C_SCL |
-| ADDR | GND recommended | Address select |
+| ADDR | ESP32 GND | Address select |
 
-Recommended default:
+Required:
 
 - `ADDR -> GND` for address `0x23` [[4]](#references)[[6]](#references)
 
-Alternative:
+The firmware uses the library default address `0x23`. `ADDR -> 3V3` selects `0x5C` [[4]](#references)[[6]](#references), and then `Sensors::init()` fails and the node does not boot. Using `0x5C` needs a code change in `src/lumen_sensor_manager.cpp`.
 
-- `ADDR -> 3V3` for address `0x5C` [[4]](#references)[[6]](#references)
-
-Do not leave ADDR floating. While a floating ADDR pin typically resolves to LOW (address `0x23`) [[5]](#references), tying it explicitly to GND or VCC is the more robust practice.
+Do not leave ADDR floating. A floating ADDR pin usually reads as LOW (address `0x23`) [[5]](#references), but tie it to GND so the address is fixed.
 
 ---
 
