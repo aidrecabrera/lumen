@@ -1,13 +1,8 @@
 #include <unity.h>
 
+#include "lumen_led_control.h"
 
-/// @brief duplicated to test lumen_led_control.cpp, i dont want to expose the function just for testing
-static uint8_t scaleChannel(uint8_t brightness_pct, uint8_t channel_pct) {
-    const uint32_t scaled =
-        static_cast<uint32_t>(brightness_pct) * static_cast<uint32_t>(channel_pct) * 255U;
-
-    return static_cast<uint8_t>(scaled / 10000U);
-}
+using LedControl::scaleChannel;
 
 void test_scale_channel_full_brightness_full_channel() {
     TEST_ASSERT_EQUAL_UINT8(255, scaleChannel(100, 100));

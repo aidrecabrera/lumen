@@ -316,8 +316,8 @@ bool setupSubscriptionsLocked() {
 }
 
 bool publishAvailabilityOnlineLocked() {
-    // Runs right after a successful connect. The text overload measures the payload with
-    // strnlen (PubSubClient.cpp:440), so it sends the same bytes as the binary overload.
+    // Plain text, not MsgPack, to match the "offline" will message. Retained, so a client that
+    // subscribes later still sees the current state.
     if (!broker_client.publish(availability_topic, kAvailabilityOnline, true)) {
         ESP_LOGW(TAG, "publish failed %s", availability_topic);
         return false;

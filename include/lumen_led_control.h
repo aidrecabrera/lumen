@@ -13,5 +13,7 @@ void controlTick(const SensorReading& latest_reading);
 LedState getCurrentLedState();
 DeviceMode getCurrentMode();
 StatusMessage buildStatusMessage(DegradedTier degraded_tier);
+// Pixel level 0..255 for one channel. Public so the device tests check the real code.
+uint8_t scaleChannel(uint8_t brightness_pct, uint8_t channel_pct);
 
 }  // namespace LedControl

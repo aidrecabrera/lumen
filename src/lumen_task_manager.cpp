@@ -100,7 +100,6 @@ void inboundCommandBridge(CommandKind kind, const uint8_t* payload, uint16_t len
 
     if (status == CommandHandler::DecodeStatus::UNADDRESSABLE) {
         // decode() logged the reason. Without a command_id there is no ack topic.
-        ESP_LOGW(TAG, "inbound command not handled");
         return;
     }
 
@@ -158,17 +157,14 @@ void taskLed(void* parameter) {
         esp_task_wdt_reset();
         drainLatestSensor(latest_reading, has_sensor_reading);
 
+        // sendToQueue logs a full queue.
         if (has_command) {
             const AckMessage ack = LedControl::applyCommand(command);
-            if (!sendToQueue(ack_to_mqtt_queue, ack, "ack_to_mqtt")) {
-                ESP_LOGW(TAG, "ack enqueue failed");
-            }
+            sendToQueue(ack_to_mqtt_queue, ack, "ack_to_mqtt");
 
             const StatusMessage status =
                 LedControl::buildStatusMessage(WifiManager::getDegradedTier());
-            if (!sendToQueue(status_to_mqtt_queue, status, "status_to_mqtt")) {
-                ESP_LOGW(TAG, "status enqueue failed");
-            }
+            sendToQueue(status_to_mqtt_queue, status, "status_to_mqtt");
         }
 
         if (has_sensor_reading) {
@@ -179,9 +175,7 @@ void taskLed(void* parameter) {
             if (!areLedStatesEqual(previous_led, current_led)) {
                 const StatusMessage status =
                     LedControl::buildStatusMessage(WifiManager::getDegradedTier());
-                if (!sendToQueue(status_to_mqtt_queue, status, "status_to_mqtt")) {
-                    ESP_LOGW(TAG, "status enqueue failed");
-                }
+                sendToQueue(status_to_mqtt_queue, status, "status_to_mqtt");
             }
         }
 
@@ -191,17 +185,14 @@ void taskLed(void* parameter) {
         const uint64_t now_ms = getNowMs();
         if (now_ms - last_energy_publish_ms >= ENERGY_PUBLISH_INTERVAL_MS) {
             const EnergyMessage energy = EnergyTracker::getSnapshot();
-            if (!sendToQueue(energy_to_mqtt_queue, energy, "energy_to_mqtt")) {
-                ESP_LOGW(TAG, "energy enqueue failed");
-            }
+            sendToQueue(energy_to_mqtt_queue, energy, "energy_to_mqtt");
 
             last_energy_publish_ms = now_ms;
         }
 
         if (now_ms - last_energy_persist_ms >= ENERGY_PERSIST_INTERVAL_MS) {
-            if (!EnergyTracker::requestPersist()) {
-                ESP_LOGW(TAG, "energy persist failed");
-            }
+            // ConfigManager logs a failed NVS write. The next interval retries.
+            EnergyTracker::requestPersist();
 
             last_energy_persist_ms = now_ms;
         }

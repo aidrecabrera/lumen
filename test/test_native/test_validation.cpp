@@ -207,7 +207,7 @@ void test_parseCommandId_failure_keeps_previous_id() {
     TEST_ASSERT_EQUAL_STRING("first", id.c_str());
 }
 
-// Pins the "reason" wire text, which was a free string before AckReason.
+// Pins the ack "reason" wire text, because clients may match on it.
 void test_ackReasonText_matches_wire_text() {
     TEST_ASSERT_EQUAL_STRING("mode applied", ackReasonText(AckReason::MODE_APPLIED));
     TEST_ASSERT_EQUAL_STRING("config applied", ackReasonText(AckReason::CONFIG_APPLIED));
