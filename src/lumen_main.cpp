@@ -29,7 +29,9 @@ bool initWatchdog() {
 #else
     const esp_err_t init_result = esp_task_wdt_init(WATCHDOG_TIMEOUT_MS / 1000U, true);
 #endif
-    if (init_result != ESP_OK && init_result != ESP_ERR_INVALID_STATE) {
+    // IDF 4.4 returns only OK or NO_MEM. On IDF 5, INVALID_STATE means the 10 s config was not
+    // applied, so it must fail boot too.
+    if (init_result != ESP_OK) {
         ESP_LOGE(TAG, "watchdog init failed: %s", esp_err_to_name(init_result));
         return false;
     }

@@ -1,6 +1,7 @@
 #include "lumen_led_control.h"
 
 #include <Adafruit_NeoPixel.h>
+#include <assert.h>
 #include <esp_log.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
@@ -68,9 +69,9 @@ uint8_t clampBrightness(float brightness_pct) {
 }
 
 uint8_t computeAutonomousBrightness(float light_lux) {
-    if (!isfinite(light_lux) || light_lux <= 0.0f) {
-        return 100U;
-    }
+    // Sensors::readLight accepts only finite lux >= 0. A NaN here would make clampBrightness
+    // cast NaN to uint8_t, so stop loudly instead.
+    assert(isfinite(light_lux) && light_lux >= 0.0f);
 
     if (light_lux >= AUTONOMOUS_LUX_CEILING) {
         return 0U;
