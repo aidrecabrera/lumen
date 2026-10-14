@@ -13,6 +13,7 @@
 #include "lumen_mqtt_client.h"
 #include "lumen_sensor_manager.h"
 #include "lumen_system_utils.h"
+#include "lumen_typed_queue.h"
 #include "lumen_wifi_manager.h"
 
 namespace {
@@ -22,52 +23,18 @@ static TaskHandle_t sensors_task_handle = nullptr;
 static TaskHandle_t led_task_handle = nullptr;
 static TaskHandle_t mqtt_task_handle = nullptr;
 
-static QueueHandle_t sensor_to_mqtt_queue = nullptr;
-static QueueHandle_t sensor_to_led_queue = nullptr;
-static QueueHandle_t command_dispatch_queue = nullptr;
-static QueueHandle_t status_to_mqtt_queue = nullptr;
-static QueueHandle_t energy_to_mqtt_queue = nullptr;
-static QueueHandle_t ack_to_mqtt_queue = nullptr;
-
-static StaticQueue_t sensor_to_mqtt_queue_storage;
-static uint8_t sensor_to_mqtt_queue_buffer[QUEUE_SENSOR_TO_MQTT_LENGTH * sizeof(SensorReading)];
-
-static StaticQueue_t sensor_to_led_queue_storage;
-static uint8_t sensor_to_led_queue_buffer[QUEUE_SENSOR_TO_LED_LENGTH * sizeof(SensorReading)];
-
-static StaticQueue_t command_dispatch_queue_storage;
-static uint8_t command_dispatch_queue_buffer[QUEUE_COMMAND_LENGTH * sizeof(CommandEnvelope)];
-
-static StaticQueue_t status_to_mqtt_queue_storage;
-static uint8_t status_to_mqtt_queue_buffer[QUEUE_STATUS_LENGTH * sizeof(StatusMessage)];
-
-static StaticQueue_t energy_to_mqtt_queue_storage;
-static uint8_t energy_to_mqtt_queue_buffer[QUEUE_ENERGY_LENGTH * sizeof(EnergyMessage)];
-
-static StaticQueue_t ack_to_mqtt_queue_storage;
-static uint8_t ack_to_mqtt_queue_buffer[QUEUE_ACK_LENGTH * sizeof(AckMessage)];
+static StaticTypedQueue<SensorReading, QUEUE_SENSOR_TO_MQTT_LENGTH> sensor_to_mqtt_queue;
+static StaticTypedQueue<SensorReading, QUEUE_SENSOR_TO_LED_LENGTH> sensor_to_led_queue;
+static StaticTypedQueue<CommandEnvelope, QUEUE_COMMAND_LENGTH> command_dispatch_queue;
+static StaticTypedQueue<StatusMessage, QUEUE_STATUS_LENGTH> status_to_mqtt_queue;
+static StaticTypedQueue<EnergyMessage, QUEUE_ENERGY_LENGTH> energy_to_mqtt_queue;
+static StaticTypedQueue<AckMessage, QUEUE_ACK_LENGTH> ack_to_mqtt_queue;
 
 void registerCurrentTaskWithWatchdog(const char* task_name) {
     const esp_err_t result = esp_task_wdt_add(nullptr);
     if (result != ESP_OK && result != ESP_ERR_INVALID_STATE) {
         ESP_LOGW(TAG, "%s watchdog add failed", task_name);
     }
-}
-
-void deleteQueue(QueueHandle_t& queue_handle) {
-    if (queue_handle != nullptr) {
-        vQueueDelete(queue_handle);
-        queue_handle = nullptr;
-    }
-}
-
-void clearQueues() {
-    deleteQueue(sensor_to_mqtt_queue);
-    deleteQueue(sensor_to_led_queue);
-    deleteQueue(command_dispatch_queue);
-    deleteQueue(status_to_mqtt_queue);
-    deleteQueue(energy_to_mqtt_queue);
-    deleteQueue(ack_to_mqtt_queue);
 }
 
 bool areLedStatesEqual(const LedState& left, const LedState& right) {
@@ -79,11 +46,10 @@ bool areLedStatesEqual(const LedState& left, const LedState& right) {
            (left.far_red_dist_pct == right.far_red_dist_pct);
 }
 
-// Non-blocking send. The item type must match the queue item size.
-template <typename T>
-bool sendToQueue(QueueHandle_t queue_handle, const T& item, const char* queue_name) {
-    const BaseType_t send_result = xQueueSend(queue_handle, &item, 0);
-    if (send_result == pdTRUE) {
+// Non-blocking send.
+template <typename T, size_t Length>
+bool sendToQueue(StaticTypedQueue<T, Length>& queue, const T& item, const char* queue_name) {
+    if (queue.send(item, 0)) {
         return true;
     }
 
@@ -92,11 +58,13 @@ bool sendToQueue(QueueHandle_t queue_handle, const T& item, const char* queue_na
 }
 
 // Publishes queued items in order. A failed publish keeps the item at the head for retry.
-template <typename T>
-void drainPublishQueue(QueueHandle_t queue_handle, bool (*publish)(const T&), const char* label) {
+template <typename T, size_t Length>
+void drainPublishQueue(
+    StaticTypedQueue<T, Length>& queue, bool (*publish)(const T&), const char* label
+) {
     T item = {};
 
-    while (xQueuePeek(queue_handle, &item, 0) == pdTRUE) {
+    while (queue.peek(item, 0)) {
         esp_task_wdt_reset();
 
         if (!publish(item)) {
@@ -104,31 +72,31 @@ void drainPublishQueue(QueueHandle_t queue_handle, bool (*publish)(const T&), co
             break;
         }
 
-        xQueueReceive(queue_handle, &item, 0);
+        queue.receive(item, 0);
     }
 }
 
 void drainLatestSensor(SensorReading& latest_reading, bool& has_reading) {
     SensorReading pending = {};
 
-    while (xQueueReceive(sensor_to_led_queue, &pending, 0) == pdTRUE) {
+    while (sensor_to_led_queue.receive(pending, 0)) {
         latest_reading = pending;
         has_reading = true;
     }
 }
 
 // Uses the existing ack wire format: AckResult::REJECTED with a reason string.
-void enqueueRejectedAck(const char* command_id, const char* reason) {
+void enqueueRejectedAck(const CommandId& command_id, AckReason reason) {
     const AckMessage ack = LedControl::buildRejectedAck(command_id, reason);
     if (!sendToQueue(ack_to_mqtt_queue, ack, "ack_to_mqtt")) {
-        ESP_LOGW(TAG, "rejected ack enqueue failed command_id=%s", command_id);
+        ESP_LOGW(TAG, "rejected ack enqueue failed command_id=%s", command_id.c_str());
     }
 }
 
-void inboundCommandBridge(const char* topic, const uint8_t* payload, uint16_t length) {
+void inboundCommandBridge(CommandKind kind, const uint8_t* payload, uint16_t length) {
     CommandEnvelope command = {};
     const CommandHandler::DecodeStatus status =
-        CommandHandler::decode(topic, payload, length, command);
+        CommandHandler::decode(kind, payload, length, command);
 
     if (status == CommandHandler::DecodeStatus::UNADDRESSABLE) {
         // decode() logged the reason. Without a command_id there is no ack topic.
@@ -137,13 +105,13 @@ void inboundCommandBridge(const char* topic, const uint8_t* payload, uint16_t le
     }
 
     if (status == CommandHandler::DecodeStatus::INVALID_FIELDS) {
-        enqueueRejectedAck(command.command_id, "invalid payload");
+        enqueueRejectedAck(command.command_id, AckReason::INVALID_PAYLOAD);
         return;
     }
 
     // dispatchCommand logs the reason when the queue is missing or full.
     if (!TaskManager::dispatchCommand(command)) {
-        enqueueRejectedAck(command.command_id, "command queue full");
+        enqueueRejectedAck(command.command_id, AckReason::COMMAND_QUEUE_FULL);
     }
 }
 
@@ -184,13 +152,13 @@ void taskLed(void* parameter) {
         esp_task_wdt_reset();
 
         CommandEnvelope command = {};
-        const BaseType_t receive_result =
-            xQueueReceive(command_dispatch_queue, &command, pdMS_TO_TICKS(LED_CONTROL_INTERVAL_MS));
+        const bool has_command =
+            command_dispatch_queue.receive(command, pdMS_TO_TICKS(LED_CONTROL_INTERVAL_MS));
 
         esp_task_wdt_reset();
         drainLatestSensor(latest_reading, has_sensor_reading);
 
-        if (receive_result == pdTRUE) {
+        if (has_command) {
             const AckMessage ack = LedControl::applyCommand(command);
             if (!sendToQueue(ack_to_mqtt_queue, ack, "ack_to_mqtt")) {
                 ESP_LOGW(TAG, "ack enqueue failed");
@@ -256,9 +224,9 @@ void taskMqtt(void* parameter) {
 
         if (wifi_ready && mqtt_ready) {
             SensorReading reading = {};
-            if (xQueuePeek(sensor_to_mqtt_queue, &reading, 0) == pdTRUE) {
+            if (sensor_to_mqtt_queue.peek(reading, 0)) {
                 if (MqttClient::publishTelemetry(reading)) {
-                    xQueueReceive(sensor_to_mqtt_queue, &reading, 0);
+                    sensor_to_mqtt_queue.receive(reading, 0);
                 } else {
                     ESP_LOGW(TAG, "telemetry publish failed, retained for retry");
                 }
@@ -287,62 +255,26 @@ void taskMqtt(void* parameter) {
 }  // namespace
 
 namespace TaskManager {
-// xQueueCreateStatic with static storage cannot return NULL (IDF 4.4 freertos/queue.h:202:
-// NULL only when the buffer is NULL), so this step cannot fail.
+// StaticTypedQueue::create() cannot fail (static storage), so this step cannot fail.
 void createQueues() {
-    clearQueues();
-
-    sensor_to_mqtt_queue = xQueueCreateStatic(
-        QUEUE_SENSOR_TO_MQTT_LENGTH,
-        sizeof(SensorReading),
-        sensor_to_mqtt_queue_buffer,
-        &sensor_to_mqtt_queue_storage
-    );
-
-    sensor_to_led_queue = xQueueCreateStatic(
-        QUEUE_SENSOR_TO_LED_LENGTH,
-        sizeof(SensorReading),
-        sensor_to_led_queue_buffer,
-        &sensor_to_led_queue_storage
-    );
-
-    command_dispatch_queue = xQueueCreateStatic(
-        QUEUE_COMMAND_LENGTH,
-        sizeof(CommandEnvelope),
-        command_dispatch_queue_buffer,
-        &command_dispatch_queue_storage
-    );
-
-    status_to_mqtt_queue = xQueueCreateStatic(
-        QUEUE_STATUS_LENGTH,
-        sizeof(StatusMessage),
-        status_to_mqtt_queue_buffer,
-        &status_to_mqtt_queue_storage
-    );
-
-    energy_to_mqtt_queue = xQueueCreateStatic(
-        QUEUE_ENERGY_LENGTH,
-        sizeof(EnergyMessage),
-        energy_to_mqtt_queue_buffer,
-        &energy_to_mqtt_queue_storage
-    );
-
-    ack_to_mqtt_queue = xQueueCreateStatic(
-        QUEUE_ACK_LENGTH, sizeof(AckMessage), ack_to_mqtt_queue_buffer, &ack_to_mqtt_queue_storage
-    );
+    sensor_to_mqtt_queue.create();
+    sensor_to_led_queue.create();
+    command_dispatch_queue.create();
+    status_to_mqtt_queue.create();
+    energy_to_mqtt_queue.create();
+    ack_to_mqtt_queue.create();
 
     ESP_LOGI(TAG, "queues created");
 }
 
 bool dispatchCommand(const CommandEnvelope& command) {
-    if (command_dispatch_queue == nullptr) {
+    if (!command_dispatch_queue.isCreated()) {
         ESP_LOGW(TAG, "command queue missing");
         return false;
     }
 
-    const BaseType_t send_result = xQueueSend(command_dispatch_queue, &command, 0);
-    if (send_result != pdTRUE) {
-        ESP_LOGW(TAG, "command queue full, dropped command_id=%s", command.command_id);
+    if (!command_dispatch_queue.send(command, 0)) {
+        ESP_LOGW(TAG, "command queue full, dropped command_id=%s", command.command_id.c_str());
         return false;
     }
 

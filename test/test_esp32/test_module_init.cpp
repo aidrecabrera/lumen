@@ -1,5 +1,4 @@
 #include <Arduino.h>
-#include <cstdio>
 #include <cstring>
 #include <unity.h>
 
@@ -9,6 +8,7 @@
 #include "lumen_led_control.h"
 #include "lumen_mqtt_client.h"
 #include "lumen_sensor_manager.h"
+#include "lumen_type_validation.h"
 #include "lumen_wifi_manager.h"
 
 static ThresholdConfig makeValidThresholds() {
@@ -51,25 +51,22 @@ static void assertLedEqual(const LedState& expected, const LedState& actual) {
 
 static CommandEnvelope makeModeCommand(const char* id, DeviceMode desired_mode) {
     CommandEnvelope cmd{};
-    std::snprintf(cmd.command_id, sizeof(cmd.command_id), "%s", id);
-    cmd.kind = CommandKind::MODE_CHANGE;
-    cmd.desired_mode = desired_mode;
+    TEST_ASSERT_TRUE(parseCommandId(id, std::strlen(id), cmd.command_id));
+    cmd.payload = ModeCommand{desired_mode};
     return cmd;
 }
 
 static CommandEnvelope makeLedCommand(const char* id, const LedState& desired_led) {
     CommandEnvelope cmd{};
-    std::snprintf(cmd.command_id, sizeof(cmd.command_id), "%s", id);
-    cmd.kind = CommandKind::LED_CONTROL;
-    cmd.desired_led = desired_led;
+    TEST_ASSERT_TRUE(parseCommandId(id, std::strlen(id), cmd.command_id));
+    cmd.payload = LedCommand{desired_led};
     return cmd;
 }
 
 static CommandEnvelope makeConfigCommand(const char* id, const ThresholdConfig& thresholds) {
     CommandEnvelope cmd{};
-    std::snprintf(cmd.command_id, sizeof(cmd.command_id), "%s", id);
-    cmd.kind = CommandKind::CONFIG_UPDATE;
-    cmd.desired_thresholds = thresholds;
+    TEST_ASSERT_TRUE(parseCommandId(id, std::strlen(id), cmd.command_id));
+    cmd.payload = ConfigCommand{thresholds};
     return cmd;
 }
 

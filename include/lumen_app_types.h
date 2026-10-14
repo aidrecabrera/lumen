@@ -4,15 +4,74 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <variant>
+
 static constexpr size_t DEVICE_ID_MAX_LEN = 24U;
 static constexpr size_t COMMAND_ID_MAX_LEN = 37U;
-static constexpr size_t REASON_MAX_LEN = 48U;
 
 enum class DeviceMode : uint8_t { AUTONOMOUS = 0, MANUAL = 1 };
 
 enum class CommandKind : uint8_t { LED_CONTROL = 0, CONFIG_UPDATE = 1, MODE_CHANGE = 2 };
 
 enum class AckResult : uint8_t { APPLIED = 0, REJECTED = 1, DEFERRED = 2 };
+
+// Why an ack has its result. The wire carries the text from ackReasonText().
+enum class AckReason : uint8_t {
+    MODE_APPLIED,
+    CONFIG_APPLIED,
+    LED_APPLIED,
+    NOT_READY,
+    PERSIST_FAILED,
+    BAD_THRESHOLDS,
+    BAD_LED_STATE,
+    MANUAL_LOCKED,
+    INVALID_PAYLOAD,
+    COMMAND_QUEUE_FULL,
+};
+
+// The "reason" text in the ack payload. The switch has no default, so -Wswitch flags a new value.
+inline const char* ackReasonText(AckReason reason) {
+    switch (reason) {
+        case AckReason::MODE_APPLIED:
+            return "mode applied";
+        case AckReason::CONFIG_APPLIED:
+            return "config applied";
+        case AckReason::LED_APPLIED:
+            return "led applied";
+        case AckReason::NOT_READY:
+            return "not ready";
+        case AckReason::PERSIST_FAILED:
+            return "persist failed";
+        case AckReason::BAD_THRESHOLDS:
+            return "bad thresholds";
+        case AckReason::BAD_LED_STATE:
+            return "bad led state";
+        case AckReason::MANUAL_LOCKED:
+            return "manual locked";
+        case AckReason::INVALID_PAYLOAD:
+            return "invalid payload";
+        case AckReason::COMMAND_QUEUE_FULL:
+            return "command queue full";
+    }
+
+    return "unknown";
+}
+
+class CommandId;
+bool parseCommandId(const char* text, size_t length, CommandId& out_id);
+
+// A command id that is safe to use as the last level of an MQTT topic.
+// Only parseCommandId() (lumen_type_validation) writes one. A default CommandId is empty and
+// is only a receive buffer.
+class CommandId {
+   public:
+    const char* c_str() const { return text_; }
+
+   private:
+    friend bool parseCommandId(const char* text, size_t length, CommandId& out_id);
+
+    char text_[COMMAND_ID_MAX_LEN] = {};
+};
 
 // Wi-Fi link health, published as the status "degraded_tier" byte.
 enum class DegradedTier : uint8_t {
@@ -63,12 +122,24 @@ struct StatusMessage {
     uint32_t uptime_sec;
 };
 
-struct CommandEnvelope {
-    char command_id[COMMAND_ID_MAX_LEN];
-    CommandKind kind;
-    DeviceMode desired_mode;
+struct LedCommand {
     LedState desired_led;
+};
+
+struct ConfigCommand {
     ThresholdConfig desired_thresholds;
+};
+
+struct ModeCommand {
+    DeviceMode desired_mode;
+};
+
+// Each command kind carries only its own payload.
+using CommandPayload = std::variant<LedCommand, ConfigCommand, ModeCommand>;
+
+struct CommandEnvelope {
+    CommandId command_id;
+    CommandPayload payload;
 };
 
 struct EnergyMessage {
@@ -80,10 +151,10 @@ struct EnergyMessage {
 };
 
 struct AckMessage {
-    char command_id[COMMAND_ID_MAX_LEN];
+    CommandId command_id;
     AckResult result;
     uint64_t timestamp_ms;
     DeviceMode mode;
     LedState led;
-    char reason[REASON_MAX_LEN];
+    AckReason reason;
 };

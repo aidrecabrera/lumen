@@ -153,42 +153,42 @@ void snapshotState(DeviceMode& mode, LedState& led, ThresholdConfig* thresholds 
 }
 
 AckMessage buildAck(
-    const char* command_id,
+    const CommandId& command_id,
     AckResult result,
-    const char* reason,
+    AckReason reason,
     DeviceMode mode,
     const LedState& led
 ) {
     AckMessage ack = {};
-    copyText(ack.command_id, sizeof(ack.command_id), command_id);
+    ack.command_id = command_id;
     ack.result = result;
     ack.timestamp_ms = getNowMs();
     ack.mode = mode;
     ack.led = led;
-    copyText(ack.reason, sizeof(ack.reason), reason);
+    ack.reason = reason;
     return ack;
 }
 
-AckMessage buildAckFromCurrent(const char* command_id, AckResult result, const char* reason) {
+AckMessage buildAckFromCurrent(const CommandId& command_id, AckResult result, AckReason reason) {
     DeviceMode mode = DeviceMode::AUTONOMOUS;
     LedState led = {};
     snapshotState(mode, led);
     return buildAck(command_id, result, reason, mode, led);
 }
 
-AckMessage rejectCommand(const CommandEnvelope& command, const char* reason) {
-    ESP_LOGW(TAG, "command rejected: %s", reason);
-    return buildAckFromCurrent(command.command_id, AckResult::REJECTED, reason);
+AckMessage rejectCommand(const CommandId& command_id, AckReason reason) {
+    ESP_LOGW(TAG, "command rejected: %s", ackReasonText(reason));
+    return buildAckFromCurrent(command_id, AckResult::REJECTED, reason);
 }
 
-AckMessage applyModeChange(const CommandEnvelope& command) {
+AckMessage applyModeChange(const CommandId& command_id, const ModeCommand& command) {
     DeviceMode mode_snapshot = DeviceMode::AUTONOMOUS;
     LedState led_snapshot = {};
     ThresholdConfig thresholds_snapshot = {};
     snapshotState(mode_snapshot, led_snapshot, &thresholds_snapshot);
 
     if (!persistRuntimeState(command.desired_mode, led_snapshot, thresholds_snapshot)) {
-        return rejectCommand(command, "persist failed");
+        return rejectCommand(command_id, AckReason::PERSIST_FAILED);
     }
 
     lockState();
@@ -197,13 +197,13 @@ AckMessage applyModeChange(const CommandEnvelope& command) {
 
     ESP_LOGI(TAG, "mode changed");
     return buildAck(
-        command.command_id, AckResult::APPLIED, "mode applied", command.desired_mode, led_snapshot
+        command_id, AckResult::APPLIED, AckReason::MODE_APPLIED, command.desired_mode, led_snapshot
     );
 }
 
-AckMessage applyConfigChange(const CommandEnvelope& command) {
+AckMessage applyConfigChange(const CommandId& command_id, const ConfigCommand& command) {
     if (!isThresholdConfigValid(command.desired_thresholds)) {
-        return rejectCommand(command, "bad thresholds");
+        return rejectCommand(command_id, AckReason::BAD_THRESHOLDS);
     }
 
     DeviceMode mode_snapshot = DeviceMode::AUTONOMOUS;
@@ -212,7 +212,7 @@ AckMessage applyConfigChange(const CommandEnvelope& command) {
     snapshotState(mode_snapshot, led_snapshot, &thresholds_snapshot);
 
     if (!persistRuntimeState(mode_snapshot, led_snapshot, command.desired_thresholds)) {
-        return rejectCommand(command, "persist failed");
+        return rejectCommand(command_id, AckReason::PERSIST_FAILED);
     }
 
     lockState();
@@ -220,13 +220,13 @@ AckMessage applyConfigChange(const CommandEnvelope& command) {
     unlockState();
 
     return buildAck(
-        command.command_id, AckResult::APPLIED, "config applied", mode_snapshot, led_snapshot
+        command_id, AckResult::APPLIED, AckReason::CONFIG_APPLIED, mode_snapshot, led_snapshot
     );
 }
 
-AckMessage applyLedChange(const CommandEnvelope& command) {
+AckMessage applyLedChange(const CommandId& command_id, const LedCommand& command) {
     if (!isLedStateValid(command.desired_led)) {
-        return rejectCommand(command, "bad led state");
+        return rejectCommand(command_id, AckReason::BAD_LED_STATE);
     }
 
     DeviceMode mode_snapshot = DeviceMode::AUTONOMOUS;
@@ -235,11 +235,11 @@ AckMessage applyLedChange(const CommandEnvelope& command) {
     snapshotState(mode_snapshot, led_snapshot, &thresholds_snapshot);
 
     if (mode_snapshot == DeviceMode::AUTONOMOUS) {
-        return rejectCommand(command, "manual locked");
+        return rejectCommand(command_id, AckReason::MANUAL_LOCKED);
     }
 
     if (!persistRuntimeState(mode_snapshot, command.desired_led, thresholds_snapshot)) {
-        return rejectCommand(command, "persist failed");
+        return rejectCommand(command_id, AckReason::PERSIST_FAILED);
     }
 
     lockState();
@@ -248,9 +248,26 @@ AckMessage applyLedChange(const CommandEnvelope& command) {
 
     applyToHardware(command.desired_led);
     return buildAck(
-        command.command_id, AckResult::APPLIED, "led applied", mode_snapshot, command.desired_led
+        command_id, AckResult::APPLIED, AckReason::LED_APPLIED, mode_snapshot, command.desired_led
     );
 }
+
+// std::visit needs one overload per CommandPayload alternative, so a new kind is a compile error.
+struct CommandApplier {
+    const CommandId& command_id;
+
+    AckMessage operator()(const LedCommand& command) const {
+        return applyLedChange(command_id, command);
+    }
+
+    AckMessage operator()(const ConfigCommand& command) const {
+        return applyConfigChange(command_id, command);
+    }
+
+    AckMessage operator()(const ModeCommand& command) const {
+        return applyModeChange(command_id, command);
+    }
+};
 }  // namespace
 
 namespace LedControl {
@@ -278,26 +295,18 @@ bool init() {
 
 AckMessage applyCommand(const CommandEnvelope& command) {
     if (!is_initialized) {
-        return buildAckFromCurrent(command.command_id, AckResult::REJECTED, "not ready");
+        return buildAckFromCurrent(command.command_id, AckResult::REJECTED, AckReason::NOT_READY);
     }
 
-    if (command.kind == CommandKind::MODE_CHANGE) {
-        return applyModeChange(command);
-    }
-
-    if (command.kind == CommandKind::CONFIG_UPDATE) {
-        return applyConfigChange(command);
-    }
-
-    if (command.kind == CommandKind::LED_CONTROL) {
-        return applyLedChange(command);
-    }
-
-    return rejectCommand(command, "bad command");
+    // The payload holds only trivially copyable types, so it is never valueless and
+    // std::visit cannot throw.
+    return std::visit(CommandApplier{command.command_id}, command.payload);
 }
 
-AckMessage buildRejectedAck(const char* command_id, const char* reason) {
-    ESP_LOGW(TAG, "command %s rejected before apply: %s", command_id, reason);
+AckMessage buildRejectedAck(const CommandId& command_id, AckReason reason) {
+    ESP_LOGW(
+        TAG, "command %s rejected before apply: %s", command_id.c_str(), ackReasonText(reason)
+    );
     return buildAckFromCurrent(command_id, AckResult::REJECTED, reason);
 }
 

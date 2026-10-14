@@ -7,12 +7,12 @@
 #include <esp_log.h>
 #include <esp_system.h>
 #include <freertos/FreeRTOS.h>
-#include <freertos/queue.h>
 #include <freertos/semphr.h>
 #include <string.h>
 
 #include "lumen_board_config.h"
 #include "lumen_system_utils.h"
+#include "lumen_typed_queue.h"
 #include "lumen_wifi_manager.h"
 
 namespace {
@@ -44,7 +44,7 @@ static const char* const kAvailabilityOnline = "online";
 static const char* const kAvailabilityOffline = "offline";
 
 struct InboundMessage {
-    char topic[TOPIC_LEN];
+    CommandKind kind;
     uint16_t length;
     uint8_t payload[COMMAND_DOC_SIZE];
 };
@@ -78,9 +78,7 @@ static PubSubClient broker_client;
 static StaticSemaphore_t mqtt_mutex_storage;
 static SemaphoreHandle_t mqtt_mutex = nullptr;
 
-static StaticQueue_t inbound_queue_storage;
-static uint8_t inbound_queue_buffer[INBOUND_QUEUE_LENGTH * sizeof(InboundMessage)];
-static QueueHandle_t inbound_queue = nullptr;
+static StaticTypedQueue<InboundMessage, INBOUND_QUEUE_LENGTH> inbound_queue;
 
 static bool is_initialized = false;
 static char device_id_buf[DEVICE_ID_MAX_LEN] = {};
@@ -109,13 +107,8 @@ void ensureInfrastructure() {
         mqtt_mutex = xSemaphoreCreateMutexStatic(&mqtt_mutex_storage);
     }
 
-    if (inbound_queue == nullptr) {
-        inbound_queue = xQueueCreateStatic(
-            INBOUND_QUEUE_LENGTH,
-            sizeof(InboundMessage),
-            inbound_queue_buffer,
-            &inbound_queue_storage
-        );
+    if (!inbound_queue.isCreated()) {
+        inbound_queue.create();
     }
 }
 
@@ -126,7 +119,8 @@ bool buildTopic(char* out_topic, size_t out_len, const char* suffix) {
     return (written > 0) && (static_cast<size_t>(written) < out_len);
 }
 
-bool buildAckTopic(char* out_topic, size_t out_len, const char* command_id) {
+// parseCommandId() guarantees that command_id is one valid topic level.
+bool buildAckTopic(char* out_topic, size_t out_len, const CommandId& command_id) {
     const int written = snprintf(
         out_topic,
         out_len,
@@ -134,7 +128,7 @@ bool buildAckTopic(char* out_topic, size_t out_len, const char* command_id) {
         MQTT_TOPIC_ROOT,
         device_id_buf,
         MQTT_TOPIC_ACK_PREFIX,
-        command_id
+        command_id.c_str()
     );
 
     return (written > 0) && (static_cast<size_t>(written) < out_len);
@@ -276,11 +270,11 @@ bool encodeAck(
     const AckMessage& ack, uint8_t* payload_buf, size_t payload_len, size_t& encoded_len
 ) {
     StaticJsonDocument<ACK_DOC_SIZE> doc;
-    doc["command_id"] = ack.command_id;
+    doc["command_id"] = ack.command_id.c_str();
     doc["result"] = static_cast<uint8_t>(ack.result);
     doc["timestamp_ms"] = ack.timestamp_ms;
     doc["mode"] = static_cast<uint8_t>(ack.mode);
-    doc["reason"] = ack.reason;
+    doc["reason"] = ackReasonText(ack.reason);
 
     JsonObject led_obj = doc.createNestedObject("led");
     fillLedObject(led_obj, ack.led);
@@ -289,9 +283,24 @@ bool encodeAck(
 }
 
 // PubSubClient passes a pointer into its own buffer, never NULL (PubSubClient.cpp:405, :416).
-bool isCommandTopic(const char* topic) {
-    return (strcmp(topic, cmd_led_topic) == 0) || (strcmp(topic, cmd_config_topic) == 0) ||
-           (strcmp(topic, cmd_mode_topic) == 0);
+// This exact match is the only place that maps a topic to a command kind.
+bool commandKindForTopic(const char* topic, CommandKind& out_kind) {
+    if (strcmp(topic, cmd_led_topic) == 0) {
+        out_kind = CommandKind::LED_CONTROL;
+        return true;
+    }
+
+    if (strcmp(topic, cmd_config_topic) == 0) {
+        out_kind = CommandKind::CONFIG_UPDATE;
+        return true;
+    }
+
+    if (strcmp(topic, cmd_mode_topic) == 0) {
+        out_kind = CommandKind::MODE_CHANGE;
+        return true;
+    }
+
+    return false;
 }
 
 bool setupSubscriptionsLocked() {
@@ -307,12 +316,14 @@ bool setupSubscriptionsLocked() {
 }
 
 bool publishAvailabilityOnlineLocked() {
-    return publishPayloadLocked(
-        availability_topic,
-        reinterpret_cast<const uint8_t*>(kAvailabilityOnline),
-        strlen(kAvailabilityOnline),
-        true
-    );
+    // Runs right after a successful connect. The text overload measures the payload with
+    // strnlen (PubSubClient.cpp:440), so it sends the same bytes as the binary overload.
+    if (!broker_client.publish(availability_topic, kAvailabilityOnline, true)) {
+        ESP_LOGW(TAG, "publish failed %s", availability_topic);
+        return false;
+    }
+
+    return true;
 }
 
 bool connectBrokerLocked() {
@@ -345,13 +356,17 @@ bool connectBrokerLocked() {
 // inbound_queue is created in init(), and connectOrPoll() returns before this when not initialized.
 void processInboundQueue() {
     InboundMessage msg = {};
-    while (xQueueReceive(inbound_queue, &msg, 0) == pdTRUE) {
+    while (inbound_queue.receive(msg, 0)) {
         if (inbound_callback == nullptr) {
-            ESP_LOGE(TAG, "no inbound callback registered, dropped topic=%s", msg.topic);
+            ESP_LOGE(
+                TAG,
+                "no inbound callback registered, dropped kind=%u",
+                static_cast<unsigned>(msg.kind)
+            );
             continue;
         }
 
-        inbound_callback(msg.topic, msg.payload, msg.length);
+        inbound_callback(msg.kind, msg.payload, msg.length);
     }
 }
 
@@ -359,7 +374,8 @@ static_assert(COMMAND_DOC_SIZE <= UINT16_MAX, "InboundMessage::length is uint16_
 
 // Runs inside broker_client.loop(), which connectOrPoll() calls only after init().
 void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
-    if (!isCommandTopic(topic)) {
+    InboundMessage msg = {};
+    if (!commandKindForTopic(topic, msg.kind)) {
         return;
     }
 
@@ -368,15 +384,11 @@ void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
         return;
     }
 
-    // isCommandTopic() matched one of our TOPIC_LEN buffers exactly, so this copy fits.
-    InboundMessage msg = {};
-    copyText(msg.topic, sizeof(msg.topic), topic);
-
     msg.length = static_cast<uint16_t>(length);
     memcpy(msg.payload, payload, msg.length);
 
-    if (xQueueSend(inbound_queue, &msg, 0) != pdTRUE) {
-        ESP_LOGW(TAG, "inbound queue full, dropped topic=%s len=%u", msg.topic, msg.length);
+    if (!inbound_queue.send(msg, 0)) {
+        ESP_LOGW(TAG, "inbound queue full, dropped topic=%s len=%u", topic, msg.length);
     }
 }
 }  // namespace
@@ -428,7 +440,7 @@ bool init(const char* device_id, Client& net_client, WifiConnectedFn wifi_connec
         return false;
     }
 
-    xQueueReset(inbound_queue);
+    inbound_queue.reset();
     resetReconnectState();
     is_initialized = true;
 

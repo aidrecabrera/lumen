@@ -38,10 +38,10 @@ void test_sensors_readCurrent_succeeds_and_sequence_increments();
 void test_sensors_health_true_after_successful_read();
 
 // test_command_contracts.cpp
-void test_command_handler_rejects_null_topic();
+void test_command_handler_rejects_command_id_with_topic_separator();
+void test_command_handler_rejects_command_id_with_wildcard();
 void test_command_handler_rejects_null_payload();
 void test_command_handler_rejects_zero_length_payload();
-void test_command_handler_rejects_unknown_topic();
 void test_command_handler_rejects_malformed_led_payload();
 void test_command_handler_rejects_led_missing_command_id();
 void test_command_handler_rejects_led_brightness_over_100();
@@ -106,10 +106,10 @@ void setup() {
     RUN_TEST(test_wifi_manager_init_succeeds);
     RUN_TEST(test_mqtt_client_init_with_valid_device_id_succeeds);
 
-    RUN_TEST(test_command_handler_rejects_null_topic);
+    RUN_TEST(test_command_handler_rejects_command_id_with_topic_separator);
+    RUN_TEST(test_command_handler_rejects_command_id_with_wildcard);
     RUN_TEST(test_command_handler_rejects_null_payload);
     RUN_TEST(test_command_handler_rejects_zero_length_payload);
-    RUN_TEST(test_command_handler_rejects_unknown_topic);
     RUN_TEST(test_command_handler_rejects_malformed_led_payload);
     RUN_TEST(test_command_handler_rejects_led_missing_command_id);
     RUN_TEST(test_command_handler_rejects_led_brightness_over_100);

@@ -1,6 +1,17 @@
 #include "lumen_type_validation.h"
 
 #include <math.h>
+#include <string.h>
+
+namespace {
+bool isCommandIdChar(char value) {
+    const bool is_lower = (value >= 'a') && (value <= 'z');
+    const bool is_upper = (value >= 'A') && (value <= 'Z');
+    const bool is_digit = (value >= '0') && (value <= '9');
+    const bool is_mark = (value == '-') || (value == '_');
+    return is_lower || is_upper || is_digit || is_mark;
+}
+}  // namespace
 
 bool isThresholdConfigValid(const ThresholdConfig& thresholds) {
     if (!isfinite(thresholds.temp_min_c) || !isfinite(thresholds.temp_max_c) ||
@@ -34,4 +45,24 @@ bool parseDeviceMode(uint8_t raw_mode, DeviceMode& out_mode) {
     }
 
     return false;
+}
+
+bool parseCommandId(const char* text, size_t length, CommandId& out_id) {
+    if (text == nullptr) {
+        return false;
+    }
+
+    if (length == 0U || length >= COMMAND_ID_MAX_LEN) {
+        return false;
+    }
+
+    for (size_t index = 0; index < length; ++index) {
+        if (!isCommandIdChar(text[index])) {
+            return false;
+        }
+    }
+
+    memcpy(out_id.text_, text, length);
+    out_id.text_[length] = '\0';
+    return true;
 }

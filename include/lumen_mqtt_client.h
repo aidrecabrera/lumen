@@ -4,7 +4,8 @@
 
 #include "lumen_app_types.h"
 
-using MqttInboundCallback = void (*)(const char* topic, const uint8_t* payload, uint16_t length);
+// kind comes from an exact match on one of the subscribed command topics.
+using MqttInboundCallback = void (*)(CommandKind kind, const uint8_t* payload, uint16_t length);
 using WifiConnectedFn = bool (*)();
 
 namespace MqttClient {

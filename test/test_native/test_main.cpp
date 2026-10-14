@@ -49,6 +49,13 @@ void test_backoffWithJitterMs_stays_in_window();
 void test_backoffWithJitterMs_no_jitter_for_tiny_backoff();
 void test_parseDeviceMode_accepts_known_modes();
 void test_parseDeviceMode_rejects_unknown_mode();
+void test_parseCommandId_accepts_uuid_and_marks();
+void test_parseCommandId_accepts_max_length();
+void test_parseCommandId_rejects_empty_and_too_long();
+void test_parseCommandId_rejects_topic_characters();
+void test_parseCommandId_rejects_embedded_nul();
+void test_parseCommandId_failure_keeps_previous_id();
+void test_ackReasonText_matches_wire_text();
 
 
 
@@ -99,6 +106,13 @@ int main() {
     RUN_TEST(test_backoffWithJitterMs_no_jitter_for_tiny_backoff);
     RUN_TEST(test_parseDeviceMode_accepts_known_modes);
     RUN_TEST(test_parseDeviceMode_rejects_unknown_mode);
+    RUN_TEST(test_parseCommandId_accepts_uuid_and_marks);
+    RUN_TEST(test_parseCommandId_accepts_max_length);
+    RUN_TEST(test_parseCommandId_rejects_empty_and_too_long);
+    RUN_TEST(test_parseCommandId_rejects_topic_characters);
+    RUN_TEST(test_parseCommandId_rejects_embedded_nul);
+    RUN_TEST(test_parseCommandId_failure_keeps_previous_id);
+    RUN_TEST(test_ackReasonText_matches_wire_text);
 
     return UNITY_END();
 }
