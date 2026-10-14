@@ -93,12 +93,7 @@ bool decodeBaseDocument(
     char* out_command_id,
     size_t out_command_id_len
 ) {
-    if (payload == nullptr || length == 0U || out_command_id == nullptr ||
-        out_command_id_len == 0U) {
-        ESP_LOGW(TAG, "invalid command frame");
-        return false;
-    }
-
+    // CommandHandler::decode() already rejected a null or empty payload.
     const DeserializationError error = deserializeMsgPack(doc, payload, length);
     if (error) {
         ESP_LOGW(TAG, "decode failed: %s", error.c_str());
@@ -111,8 +106,9 @@ bool decodeBaseDocument(
         return false;
     }
 
+    // is<const char*>() is true only for a string, so as<const char*>() is not null.
     const char* command_id = command_id_value.as<const char*>();
-    if (command_id == nullptr || command_id[0] == '\0') {
+    if (command_id[0] == '\0') {
         ESP_LOGW(TAG, "command id missing");
         return false;
     }

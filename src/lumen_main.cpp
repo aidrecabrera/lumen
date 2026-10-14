@@ -35,8 +35,10 @@ bool initWatchdog() {
         return false;
     }
 
+    // INVALID_STATE here means the TWDT is not initialized (esp_task_wdt.h:81). That cannot
+    // happen after init succeeded, and accepting it would leave this task unwatched.
     const esp_err_t add_result = esp_task_wdt_add(nullptr);
-    if (add_result != ESP_OK && add_result != ESP_ERR_INVALID_STATE) {
+    if (add_result != ESP_OK) {
         ESP_LOGE(TAG, "watchdog add failed: %s", esp_err_to_name(add_result));
         return false;
     }
@@ -96,7 +98,7 @@ void setup() {
 
     const RuntimeConfig config = ConfigManager::getConfigSnapshot();
     requireBootStep(MqttClient::init(config.device_id), "mqtt");
-    requireBootStep(TaskManager::createQueues(), "queues");
+    TaskManager::createQueues();
     requireBootStep(TaskManager::createTasks(), "tasks");
 
     boot_failure_count = 0;

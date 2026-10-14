@@ -741,10 +741,8 @@
         }
 
         function initializeColorPicker() {
-            const container = document.getElementById("colorPickerContainer");
-            if (!container) return;
             const wrapper = document.getElementById("colorPickerWrapper");
-            const pickerWidth = wrapper ? Math.min(wrapper.clientWidth - 40, 200) : 200;
+            const pickerWidth = Math.min(wrapper.clientWidth - 40, 200);
             colorPicker = new iro.ColorPicker("#colorPickerContainer", {
                 width: pickerWidth,
                 color: appState.led.selectedColor,
@@ -1020,11 +1018,7 @@
                 updateLEDStatus();
             });
             LED_CHANNELS.forEach((channel) => {
-                const id = `${channel}Wavelength`;
-                const control = document.getElementById(id);
-                if (!control) return;
-
-                control.addEventListener("change", function() {
+                document.getElementById(`${channel}Wavelength`).addEventListener("change", function() {
                     appState.led.wavelengths[channel] = this.checked;
                     updateLEDStatus();
                     updateWavelengthIndicators();

@@ -102,13 +102,11 @@ bool defaultWifiConnected() { return WifiManager::isConnected(); }
 
 bool hasText(const char* text) { return (text != nullptr) && (text[0] != '\0'); }
 
-bool ensureInfrastructure() {
+// Static creation with static buffers cannot return NULL (IDF 4.4 freertos/semphr.h:793 and
+// freertos/queue.h:202: NULL only when the buffer is NULL), so the handles need no null check.
+void ensureInfrastructure() {
     if (mqtt_mutex == nullptr) {
         mqtt_mutex = xSemaphoreCreateMutexStatic(&mqtt_mutex_storage);
-        if (mqtt_mutex == nullptr) {
-            ESP_LOGE(TAG, "mutex create failed");
-            return false;
-        }
     }
 
     if (inbound_queue == nullptr) {
@@ -118,18 +116,6 @@ bool ensureInfrastructure() {
             inbound_queue_buffer,
             &inbound_queue_storage
         );
-        if (inbound_queue == nullptr) {
-            ESP_LOGE(TAG, "queue create failed");
-            return false;
-        }
-    }
-
-    return true;
-}
-
-void clearInboundQueue() {
-    if (inbound_queue != nullptr) {
-        xQueueReset(inbound_queue);
     }
 }
 
@@ -229,8 +215,10 @@ bool publishPayloadLocked(
     return true;
 }
 
+// Callers pass static topic buffers, stack payload buffers, and encoded_len > 0
+// (serializeDocument returns false for an empty encoding).
 bool publishPayload(const char* topic, const uint8_t* payload_buf, size_t payload_len) {
-    if (!is_initialized || topic == nullptr || payload_buf == nullptr || payload_len == 0U) {
+    if (!is_initialized) {
         return false;
     }
 
@@ -300,11 +288,8 @@ bool encodeAck(
     return serializeDocument(doc, payload_buf, payload_len, encoded_len);
 }
 
+// PubSubClient passes a pointer into its own buffer, never NULL (PubSubClient.cpp:405, :416).
 bool isCommandTopic(const char* topic) {
-    if (topic == nullptr) {
-        return false;
-    }
-
     return (strcmp(topic, cmd_led_topic) == 0) || (strcmp(topic, cmd_config_topic) == 0) ||
            (strcmp(topic, cmd_mode_topic) == 0);
 }
@@ -357,36 +342,35 @@ bool connectBrokerLocked() {
     return true;
 }
 
+// inbound_queue is created in init(), and connectOrPoll() returns before this when not initialized.
 void processInboundQueue() {
-    if (inbound_queue == nullptr || inbound_callback == nullptr) {
-        return;
-    }
-
     InboundMessage msg = {};
     while (xQueueReceive(inbound_queue, &msg, 0) == pdTRUE) {
+        if (inbound_callback == nullptr) {
+            ESP_LOGE(TAG, "no inbound callback registered, dropped topic=%s", msg.topic);
+            continue;
+        }
+
         inbound_callback(msg.topic, msg.payload, msg.length);
     }
 }
 
-void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
-    if (inbound_queue == nullptr || inbound_callback == nullptr) {
-        return;
-    }
+static_assert(COMMAND_DOC_SIZE <= UINT16_MAX, "InboundMessage::length is uint16_t");
 
+// Runs inside broker_client.loop(), which connectOrPoll() calls only after init().
+void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
     if (!isCommandTopic(topic)) {
         return;
     }
 
-    if (length == 0U || length > COMMAND_DOC_SIZE || length > UINT16_MAX) {
+    if (length == 0U || length > COMMAND_DOC_SIZE) {
         ESP_LOGW(TAG, "command payload invalid");
         return;
     }
 
+    // isCommandTopic() matched one of our TOPIC_LEN buffers exactly, so this copy fits.
     InboundMessage msg = {};
-    if (!copyText(msg.topic, sizeof(msg.topic), topic)) {
-        ESP_LOGW(TAG, "topic copy failed");
-        return;
-    }
+    copyText(msg.topic, sizeof(msg.topic), topic);
 
     msg.length = static_cast<uint16_t>(length);
     memcpy(msg.payload, payload, msg.length);
@@ -409,9 +393,7 @@ bool init(const char* device_id, Client& net_client, WifiConnectedFn wifi_connec
         return false;
     }
 
-    if (!ensureInfrastructure()) {
-        return false;
-    }
+    ensureInfrastructure();
 
     if (!copyText(device_id_buf, sizeof(device_id_buf), device_id)) {
         ESP_LOGE(TAG, "device id too long");
@@ -446,7 +428,7 @@ bool init(const char* device_id, Client& net_client, WifiConnectedFn wifi_connec
         return false;
     }
 
-    clearInboundQueue();
+    xQueueReset(inbound_queue);
     resetReconnectState();
     is_initialized = true;
 

@@ -4,7 +4,7 @@
 
 namespace TaskManager {
 
-bool createQueues();
+void createQueues();
 bool createTasks();
 bool dispatchCommand(const CommandEnvelope& command);
 

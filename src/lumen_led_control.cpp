@@ -27,26 +27,22 @@ static SemaphoreHandle_t state_mutex = nullptr;
 
 uint32_t getUptimeSec() { return static_cast<uint32_t>(getNowMs() / 1000ULL); }
 
-bool ensureStateMutex() {
-    if (state_mutex != nullptr) {
-        return true;
+// Static creation with a static buffer cannot return NULL (IDF 4.4 freertos/semphr.h:793:
+// NULL only when the buffer is NULL), so the handle needs no null check.
+// init() calls this before the tasks start, so the lazy path never races.
+void createStateMutexOnce() {
+    if (state_mutex == nullptr) {
+        state_mutex = xSemaphoreCreateMutexStatic(&state_mutex_storage);
     }
-
-    state_mutex = xSemaphoreCreateMutexStatic(&state_mutex_storage);
-    return state_mutex != nullptr;
 }
 
 void lockState() {
-    if (ensureStateMutex()) {
-        xSemaphoreTake(state_mutex, portMAX_DELAY);
-    }
+    createStateMutexOnce();
+    xSemaphoreTake(state_mutex, portMAX_DELAY);
 }
 
-void unlockState() {
-    if (state_mutex != nullptr) {
-        xSemaphoreGive(state_mutex);
-    }
-}
+// Only called after lockState(), which created the mutex.
+void unlockState() { xSemaphoreGive(state_mutex); }
 
 bool isReadingWithinThresholds(const SensorReading& reading, const ThresholdConfig& thresholds) {
     if (!isfinite(reading.temperature_c) || !isfinite(reading.humidity_pct)) {
@@ -147,17 +143,6 @@ bool persistRuntimeState(DeviceMode mode, const LedState& led, const ThresholdCo
 }
 
 void snapshotState(DeviceMode& mode, LedState& led, ThresholdConfig* thresholds = nullptr) {
-    memset(&led, 0, sizeof(led));
-    mode = DeviceMode::AUTONOMOUS;
-
-    if (thresholds != nullptr) {
-        memset(thresholds, 0, sizeof(*thresholds));
-    }
-
-    if (!ensureStateMutex()) {
-        return;
-    }
-
     lockState();
     mode = current_mode;
     led = current_led;
@@ -175,12 +160,12 @@ AckMessage buildAck(
     const LedState& led
 ) {
     AckMessage ack = {};
-    copyText(ack.command_id, sizeof(ack.command_id), command_id != nullptr ? command_id : "");
+    copyText(ack.command_id, sizeof(ack.command_id), command_id);
     ack.result = result;
     ack.timestamp_ms = getNowMs();
     ack.mode = mode;
     ack.led = led;
-    copyText(ack.reason, sizeof(ack.reason), reason != nullptr ? reason : "");
+    copyText(ack.reason, sizeof(ack.reason), reason);
     return ack;
 }
 
@@ -270,11 +255,7 @@ AckMessage applyLedChange(const CommandEnvelope& command) {
 
 namespace LedControl {
 bool init() {
-    if (!ensureStateMutex()) {
-        ESP_LOGE(TAG, "state mutex create failed");
-        return false;
-    }
-
+    createStateMutexOnce();
     loadPersistedState();
 
     if (!isLedStateValid(current_led)) {

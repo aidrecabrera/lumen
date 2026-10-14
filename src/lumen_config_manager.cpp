@@ -43,26 +43,18 @@ static bool has_nvs = false;
 static StaticSemaphore_t config_mutex_storage;
 static SemaphoreHandle_t config_mutex = nullptr;
 
-bool ensureConfigMutex() {
-    if (config_mutex != nullptr) {
-        return true;
-    }
-
-    config_mutex = xSemaphoreCreateMutexStatic(&config_mutex_storage);
-    return config_mutex != nullptr;
-}
-
+// Static creation with a static buffer cannot return NULL (IDF 4.4 freertos/semphr.h:793:
+// NULL only when the buffer is NULL), so the handle needs no null check.
 void lockConfig() {
-    if (ensureConfigMutex()) {
-        xSemaphoreTake(config_mutex, portMAX_DELAY);
+    if (config_mutex == nullptr) {
+        config_mutex = xSemaphoreCreateMutexStatic(&config_mutex_storage);
     }
+
+    xSemaphoreTake(config_mutex, portMAX_DELAY);
 }
 
-void unlockConfig() {
-    if (config_mutex != nullptr) {
-        xSemaphoreGive(config_mutex);
-    }
-}
+// Only called after lockConfig(), which created the mutex.
+void unlockConfig() { xSemaphoreGive(config_mutex); }
 
 ThresholdConfig buildDefaultThresholds() {
     ThresholdConfig thresholds = {};
@@ -130,6 +122,7 @@ void applyDefaultConfig(RuntimeConfig& config) {
 DeviceMode sanitizeMode(uint8_t raw_mode) {
     DeviceMode mode = DeviceMode::AUTONOMOUS;
     if (!parseDeviceMode(raw_mode, mode)) {
+        ESP_LOGW(TAG, "invalid mode %u in blob, using default", raw_mode);
         return DeviceMode::AUTONOMOUS;
     }
 
@@ -140,19 +133,11 @@ bool hasTextInBuffer(const char* text, size_t max_len) {
     return (text != nullptr) && (strnlen(text, max_len) < max_len) && (text[0] != '\0');
 }
 
+// Callers validate before writing: the public save* functions check thresholds and led,
+// and device_id is always set by applyDefaultConfig() or copied only when valid.
 bool writeRuntimeConfigBlob(const RuntimeConfig& config) {
     if (!has_nvs) {
         ESP_LOGW(TAG, "nvs unavailable");
-        return false;
-    }
-
-    if (!hasTextInBuffer(config.device_id, sizeof(config.device_id))) {
-        ESP_LOGW(TAG, "runtime config save rejected: bad device id");
-        return false;
-    }
-
-    if (!isThresholdConfigValid(config.thresholds) || !isLedStateValid(config.led)) {
-        ESP_LOGW(TAG, "runtime config save rejected: invalid payload");
         return false;
     }
 
@@ -172,14 +157,10 @@ bool writeRuntimeConfigBlob(const RuntimeConfig& config) {
     return true;
 }
 
+// Callers validate total_wh: saveEnergyTotal() checks it, loadDefaults() writes 0.
 bool writeEnergyTotal(float total_wh) {
     if (!has_nvs) {
         ESP_LOGW(TAG, "nvs unavailable");
-        return false;
-    }
-
-    if (!isEnergyTotalValid(total_wh)) {
-        ESP_LOGW(TAG, "energy save rejected");
         return false;
     }
 
@@ -246,11 +227,6 @@ void loadEnergyTotal(RuntimeConfig& config) {
 
 namespace ConfigManager {
 bool init() {
-    if (!ensureConfigMutex()) {
-        ESP_LOGE(TAG, "config mutex create failed");
-        return false;
-    }
-
     lockConfig();
     applyDefaultConfig(runtime_config);
 

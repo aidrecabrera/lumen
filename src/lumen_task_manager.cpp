@@ -143,12 +143,9 @@ void taskSensors(void* parameter) {
             continue;
         }
 
-        const bool sent_mqtt = sendToQueue(sensor_to_mqtt_queue, reading, "sensor_to_mqtt");
-        const bool sent_led = sendToQueue(sensor_to_led_queue, reading, "sensor_to_led");
-
-        if (!sent_mqtt || !sent_led) {
-            continue;
-        }
+        // sendToQueue logs a full queue. The next reading replaces a dropped one.
+        sendToQueue(sensor_to_mqtt_queue, reading, "sensor_to_mqtt");
+        sendToQueue(sensor_to_led_queue, reading, "sensor_to_led");
     }
 }
 
@@ -269,7 +266,9 @@ void taskMqtt(void* parameter) {
 }  // namespace
 
 namespace TaskManager {
-bool createQueues() {
+// xQueueCreateStatic with static storage cannot return NULL (IDF 4.4 freertos/queue.h:202:
+// NULL only when the buffer is NULL), so this step cannot fail.
+void createQueues() {
     clearQueues();
 
     sensor_to_mqtt_queue = xQueueCreateStatic(
@@ -311,16 +310,7 @@ bool createQueues() {
         QUEUE_ACK_LENGTH, sizeof(AckMessage), ack_to_mqtt_queue_buffer, &ack_to_mqtt_queue_storage
     );
 
-    if (sensor_to_mqtt_queue == nullptr || sensor_to_led_queue == nullptr ||
-        command_dispatch_queue == nullptr || status_to_mqtt_queue == nullptr ||
-        energy_to_mqtt_queue == nullptr || ack_to_mqtt_queue == nullptr) {
-        ESP_LOGE(TAG, "queue create failed");
-        clearQueues();
-        return false;
-    }
-
     ESP_LOGI(TAG, "queues created");
-    return true;
 }
 
 bool dispatchCommand(const CommandEnvelope& command) {
