@@ -296,6 +296,11 @@ AckMessage applyCommand(const CommandEnvelope& command) {
     return rejectCommand(command, "bad command");
 }
 
+AckMessage buildRejectedAck(const char* command_id, const char* reason) {
+    ESP_LOGW(TAG, "command %s rejected before apply: %s", command_id, reason);
+    return buildAckFromCurrent(command_id, AckResult::REJECTED, reason);
+}
+
 void controlTick(const SensorReading& latest_reading) {
     if (!is_initialized) {
         return;

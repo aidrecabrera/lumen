@@ -127,12 +127,16 @@ void setEnvelopeBase(CommandEnvelope& out_command, const char* command_id, Comma
     out_command.kind = kind;
 }
 
-bool decodeLedPayload(const uint8_t* payload, uint16_t length, CommandEnvelope& out_command) {
+using CommandHandler::DecodeStatus;
+
+DecodeStatus decodeLedPayload(
+    const uint8_t* payload, uint16_t length, CommandEnvelope& out_command
+) {
     StaticJsonDocument<LED_COMMAND_DOC_SIZE> doc;
     char command_id[COMMAND_ID_MAX_LEN] = {};
 
     if (!decodeBaseDocument(payload, length, doc, command_id, sizeof(command_id))) {
-        return false;
+        return DecodeStatus::UNADDRESSABLE;
     }
 
     setEnvelopeBase(out_command, command_id, CommandKind::LED_CONTROL);
@@ -156,23 +160,25 @@ bool decodeLedPayload(const uint8_t* payload, uint16_t length, CommandEnvelope& 
     if (!has_power || !has_red_enabled || !has_blue_enabled || !has_far_red_enabled ||
         !has_brightness || !has_red_pct || !has_blue_pct || !has_far_red_pct) {
         ESP_LOGW(TAG, "led payload incomplete");
-        return false;
+        return DecodeStatus::INVALID_FIELDS;
     }
 
     if (!isLedStateValid(out_command.desired_led)) {
         ESP_LOGW(TAG, "led payload invalid");
-        return false;
+        return DecodeStatus::INVALID_FIELDS;
     }
 
-    return true;
+    return DecodeStatus::DECODED;
 }
 
-bool decodeConfigPayload(const uint8_t* payload, uint16_t length, CommandEnvelope& out_command) {
+DecodeStatus decodeConfigPayload(
+    const uint8_t* payload, uint16_t length, CommandEnvelope& out_command
+) {
     StaticJsonDocument<CONFIG_COMMAND_DOC_SIZE> doc;
     char command_id[COMMAND_ID_MAX_LEN] = {};
 
     if (!decodeBaseDocument(payload, length, doc, command_id, sizeof(command_id))) {
-        return false;
+        return DecodeStatus::UNADDRESSABLE;
     }
 
     setEnvelopeBase(out_command, command_id, CommandKind::CONFIG_UPDATE);
@@ -180,7 +186,7 @@ bool decodeConfigPayload(const uint8_t* payload, uint16_t length, CommandEnvelop
     const JsonVariantConst thresholds = doc["thresholds"];
     if (!thresholds.is<JsonObjectConst>()) {
         ESP_LOGW(TAG, "thresholds missing");
-        return false;
+        return DecodeStatus::INVALID_FIELDS;
     }
 
     const bool has_temp_min =
@@ -196,38 +202,44 @@ bool decodeConfigPayload(const uint8_t* payload, uint16_t length, CommandEnvelop
 
     if (!has_temp_min || !has_temp_max || !has_humidity_min || !has_humidity_max) {
         ESP_LOGW(TAG, "threshold payload incomplete");
-        return false;
+        return DecodeStatus::INVALID_FIELDS;
     }
 
     if (!isThresholdConfigValid(out_command.desired_thresholds)) {
         ESP_LOGW(TAG, "threshold payload invalid");
-        return false;
+        return DecodeStatus::INVALID_FIELDS;
     }
 
-    return true;
+    return DecodeStatus::DECODED;
 }
 
-bool decodeModePayload(const uint8_t* payload, uint16_t length, CommandEnvelope& out_command) {
+DecodeStatus decodeModePayload(
+    const uint8_t* payload, uint16_t length, CommandEnvelope& out_command
+) {
     StaticJsonDocument<MODE_COMMAND_DOC_SIZE> doc;
     char command_id[COMMAND_ID_MAX_LEN] = {};
 
     if (!decodeBaseDocument(payload, length, doc, command_id, sizeof(command_id))) {
-        return false;
+        return DecodeStatus::UNADDRESSABLE;
     }
 
     setEnvelopeBase(out_command, command_id, CommandKind::MODE_CHANGE);
 
-    return readModeField(doc["mode"], out_command.desired_mode);
+    if (!readModeField(doc["mode"], out_command.desired_mode)) {
+        return DecodeStatus::INVALID_FIELDS;
+    }
+
+    return DecodeStatus::DECODED;
 }
 }  // namespace
 
 namespace CommandHandler {
-bool decode(
+DecodeStatus decode(
     const char* topic, const uint8_t* payload, uint16_t length, CommandEnvelope& out_command
 ) {
     if (topic == nullptr || payload == nullptr || length == 0U) {
         ESP_LOGW(TAG, "invalid inbound command");
-        return false;
+        return DecodeStatus::UNADDRESSABLE;
     }
 
     if (endsWith(topic, MQTT_TOPIC_CMD_LED_SUFFIX)) {
@@ -243,6 +255,6 @@ bool decode(
     }
 
     ESP_LOGW(TAG, "unknown command topic: %s", topic);
-    return false;
+    return DecodeStatus::UNADDRESSABLE;
 }
 }  // namespace CommandHandler

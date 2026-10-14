@@ -117,12 +117,33 @@ void drainLatestSensor(SensorReading& latest_reading, bool& has_reading) {
     }
 }
 
+// Uses the existing ack wire format: AckResult::REJECTED with a reason string.
+void enqueueRejectedAck(const char* command_id, const char* reason) {
+    const AckMessage ack = LedControl::buildRejectedAck(command_id, reason);
+    if (!sendToQueue(ack_to_mqtt_queue, ack, "ack_to_mqtt")) {
+        ESP_LOGW(TAG, "rejected ack enqueue failed command_id=%s", command_id);
+    }
+}
+
 void inboundCommandBridge(const char* topic, const uint8_t* payload, uint16_t length) {
     CommandEnvelope command = {};
-    const bool was_handled = CommandHandler::decode(topic, payload, length, command) &&
-                             TaskManager::dispatchCommand(command);
-    if (!was_handled) {
+    const CommandHandler::DecodeStatus status =
+        CommandHandler::decode(topic, payload, length, command);
+
+    if (status == CommandHandler::DecodeStatus::UNADDRESSABLE) {
+        // decode() logged the reason. Without a command_id there is no ack topic.
         ESP_LOGW(TAG, "inbound command not handled");
+        return;
+    }
+
+    if (status == CommandHandler::DecodeStatus::INVALID_FIELDS) {
+        enqueueRejectedAck(command.command_id, "invalid payload");
+        return;
+    }
+
+    // dispatchCommand logs the reason when the queue is missing or full.
+    if (!TaskManager::dispatchCommand(command)) {
+        enqueueRejectedAck(command.command_id, "command queue full");
     }
 }
 

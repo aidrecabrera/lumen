@@ -59,6 +59,8 @@ void test_command_handler_rejects_mode_string_value();
 void test_command_handler_decodes_valid_led_payload();
 void test_command_handler_decodes_valid_config_payload();
 void test_command_handler_decodes_valid_mode_payload();
+void test_command_handler_invalid_fields_keep_command_id_for_ack();
+void test_command_handler_missing_command_id_is_unaddressable();
 
 // test_led_scale_channel.cpp
 void test_scale_channel_full_brightness_full_channel();
@@ -125,6 +127,8 @@ void setup() {
     RUN_TEST(test_command_handler_decodes_valid_led_payload);
     RUN_TEST(test_command_handler_decodes_valid_config_payload);
     RUN_TEST(test_command_handler_decodes_valid_mode_payload);
+    RUN_TEST(test_command_handler_invalid_fields_keep_command_id_for_ack);
+    RUN_TEST(test_command_handler_missing_command_id_is_unaddressable);
 
     RUN_TEST(test_sensors_init_succeeds);
     RUN_TEST(test_sensors_readCurrent_succeeds_and_sequence_increments);

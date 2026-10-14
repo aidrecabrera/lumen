@@ -350,7 +350,8 @@ void prepareCommandHandler() {
 
 bool decodeCommand(const char* topic, const uint8_t* payload, uint16_t length) {
     CommandEnvelope command = {};
-    return CommandHandler::decode(topic, payload, length, command);
+    return CommandHandler::decode(topic, payload, length, command) ==
+           CommandHandler::DecodeStatus::DECODED;
 }
 
 std::string makeTopic(const char* leaf) {
@@ -417,6 +418,39 @@ void test_command_handler_rejects_led_missing_command_id() {
             payload.data(),
             static_cast<uint16_t>(payload.size())
         )
+    );
+}
+
+void test_command_handler_invalid_fields_keep_command_id_for_ack() {
+    prepareCommandHandler();
+    const auto payload = makeLedPayloadBrightness101();
+    const std::string topic = makeTopic("led");
+    CommandEnvelope command = {};
+
+    const CommandHandler::DecodeStatus status = CommandHandler::decode(
+        topic.c_str(), payload.data(), static_cast<uint16_t>(payload.size()), command
+    );
+
+    TEST_ASSERT_EQUAL_UINT8(
+        static_cast<uint8_t>(CommandHandler::DecodeStatus::INVALID_FIELDS),
+        static_cast<uint8_t>(status)
+    );
+    TEST_ASSERT_EQUAL_STRING("cmd-led-2", command.command_id);
+}
+
+void test_command_handler_missing_command_id_is_unaddressable() {
+    prepareCommandHandler();
+    const auto payload = makeLedPayloadMissingCommandId();
+    const std::string topic = makeTopic("led");
+    CommandEnvelope command = {};
+
+    const CommandHandler::DecodeStatus status = CommandHandler::decode(
+        topic.c_str(), payload.data(), static_cast<uint16_t>(payload.size()), command
+    );
+
+    TEST_ASSERT_EQUAL_UINT8(
+        static_cast<uint8_t>(CommandHandler::DecodeStatus::UNADDRESSABLE),
+        static_cast<uint8_t>(status)
     );
 }
 
@@ -586,7 +620,7 @@ void test_command_handler_decodes_valid_led_payload() {
             payload.data(),
             static_cast<uint16_t>(payload.size()),
             command
-        )
+        ) == CommandHandler::DecodeStatus::DECODED
     );
     TEST_ASSERT_EQUAL_STRING("cmd-led-1", command.command_id);
     TEST_ASSERT_EQUAL_UINT8(
@@ -614,7 +648,7 @@ void test_command_handler_decodes_valid_config_payload() {
             payload.data(),
             static_cast<uint16_t>(payload.size()),
             command
-        )
+        ) == CommandHandler::DecodeStatus::DECODED
     );
     TEST_ASSERT_EQUAL_STRING("cmd-cfg-ok", command.command_id);
     TEST_ASSERT_EQUAL_UINT8(
@@ -638,7 +672,7 @@ void test_command_handler_decodes_valid_mode_payload() {
             payload.data(),
             static_cast<uint16_t>(payload.size()),
             command
-        )
+        ) == CommandHandler::DecodeStatus::DECODED
     );
     TEST_ASSERT_EQUAL_STRING("cmd-mode-ok", command.command_id);
     TEST_ASSERT_EQUAL_UINT8(
