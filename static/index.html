@@ -158,30 +158,6 @@
             background-color: rgba(0, 0, 0, 0.03);
         }
 
-        .status-dot {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            display: inline-block;
-            animation: pulse 2s infinite;
-        }
-
-        @keyframes pulse {
-
-            0%,
-            100% {
-                opacity: 1;
-            }
-
-            50% {
-                opacity: 0.5;
-            }
-        }
-
-        .status-dot.online {
-            background-color: var(--bs-success);
-        }
-
         .loading-spinner {
             width: 1rem;
             height: 1rem;
@@ -269,7 +245,7 @@
                     </div>
                 </div>
                 <div class="d-flex align-items-center gap-2 gap-md-3">
-                    <div class="d-none d-md-flex align-items-center gap-2"><span class="status-dot online" id="connectionStatus"></span><small class="text-muted">Connected</small></div>
+                    <span class="badge text-bg-warning text-wrap" id="demoBadge">Demo data – not connected to a device</span>
                     <div class="d-none d-lg-block"><small class="text-muted"><i class="ph ph-clock me-1"></i><span id="lastUpdate">--:--:--</span></small></div><button class="btn btn-outline-secondary position-relative" type="button" data-bs-toggle="offcanvas" data-bs-target="#alertsOffcanvas" aria-label="Notifications"><i class="ph ph-bell fs-5"></i><span class="badge bg-danger notification-badge" id="alertBadge">0</span></button><button class="btn btn-outline-secondary" type="button" data-bs-toggle="offcanvas" data-bs-target="#settingsOffcanvas" aria-label="Settings"><i class="ph ph-gear fs-5"></i></button>
                 </div>
             </div>
@@ -341,7 +317,7 @@
                                         <p class="sensor-label text-muted mb-1">Energy</p>
                                         <p class="sensor-value mb-0" id="energyValue">--</p><small class="text-muted">kWh</small>
                                     </div><i class="ph ph-lightning sensor-icon text-primary"></i>
-                                </div><small class="text-success" id="energySavings"><i class="ph ph-trend-down me-1"></i>-- saved </small>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -493,15 +469,6 @@
                                 <div class="col-6">
                                     <div class="bg-body-secondary rounded p-2 text-center"><small class="text-muted d-block">Avg Light</small><strong id="avgLight">-- lux</strong></div>
                                 </div>
-                                <div class="col-6">
-                                    <div class="bg-body-secondary rounded p-2 text-center"><small class="text-muted d-block">Energy Saved</small><strong id="totalEnergySaved">-- kWh</strong></div>
-                                </div>
-                                <div class="col-6">
-                                    <div class="bg-body-secondary rounded p-2 text-center"><small class="text-muted d-block">Optimal Hours</small><strong id="optimalHours">--h</strong></div>
-                                </div>
-                                <div class="col-6">
-                                    <div class="bg-body-secondary rounded p-2 text-center"><small class="text-muted d-block">Score</small><strong id="optimizationScore">--%</strong></div>
-                                </div>
                             </div>
                         </div>
                     </div>
@@ -525,7 +492,7 @@
             <div class="d-flex justify-content-between align-items-center mb-3"><small class="text-muted" id="alertCount">0 alerts</small><button class="btn btn-sm btn-outline-danger" id="clearAlertsBtn"><i class="ph ph-trash me-1"></i>Clear All </button></div>
             <div id="alertsList">
                 <div class="empty-state"><i class="ph ph-check-circle fs-1 text-success"></i>
-                    <p class="mt-2 mb-0">All systems optimal</p><small class="text-muted">No alerts at this time</small>
+                    <p class="mt-2 mb-0">No alerts</p>
                 </div>
             </div>
         </div>
@@ -538,12 +505,6 @@
             <div class="mb-4">
                 <h6 class="text-muted mb-3">Appearance</h6>
                 <div class="form-check form-switch d-flex justify-content-between align-items-center py-2"><label class="form-check-label" for="darkModeToggle"><i class="ph ph-moon me-2"></i>Dark Mode </label><input class="form-check-input" type="checkbox" role="switch" id="darkModeToggle" /></div>
-            </div>
-            <div class="mb-4">
-                <h6 class="text-muted mb-3">Automation Rules</h6>
-                <div class="form-check mb-2"><input class="form-check-input" type="checkbox" id="autoAdjustSpectrum" checked /><label class="form-check-label small" for="autoAdjustSpectrum">Auto-adjust spectrum phase</label></div>
-                <div class="form-check mb-2"><input class="form-check-input" type="checkbox" id="nightModeAuto" checked /><label class="form-check-label small" for="nightModeAuto">Enable night mode (10pm - 6am)</label></div>
-                <div class="form-check"><input class="form-check-input" type="checkbox" id="energySaveMode" /><label class="form-check-label small" for="energySaveMode">Energy saving mode</label></div>
             </div>
             <div class="mb-4">
                 <h6 class="text-muted mb-3">Alert Thresholds</h6>
@@ -563,8 +524,8 @@
             <div class="mb-4">
                 <h6 class="text-muted mb-3">System Information</h6>
                 <div class="bg-body-secondary rounded p-3">
-                    <div class="d-flex justify-content-between mb-2"><small class="text-muted">Device ID</small><small class="font-monospace">SPOT-ESP32-001</small></div>
-                    <div class="d-flex justify-content-between mb-2"><small class="text-muted">Firmware</small><small class="font-monospace">v2.4.1</small></div>
+                    <div class="d-flex justify-content-between mb-2"><small class="text-muted">Device ID</small><small class="font-monospace">--</small></div>
+                    <div class="d-flex justify-content-between mb-2"><small class="text-muted">Firmware</small><small class="font-monospace">--</small></div>
                     <div class="d-flex justify-content-between"><small class="text-muted">Uptime</small><small id="systemUptime">0d 0h 0m</small></div>
                 </div>
             </div>
@@ -620,18 +581,9 @@
                     min: 60,
                     max: 80
                 },
-                automation: {
-                    autoAdjustSpectrum: true,
-                    nightModeAuto: true,
-                    energySaveMode: false,
-                },
             },
             simulation: {
                 updateInterval: 3000,
-            },
-            stats: {
-                totalEnergySaved: 0,
-                optimalHours: 0,
             },
         };
         let charts = {
@@ -715,8 +667,6 @@
             }
             appState.history.lightUsage = [8, 12, 18, 24, 28, 32, 30, 25];
             appState.energy.hourlyBreakdown = [15, 10, 25, 45, 60, 55, 40, 20];
-            appState.stats.totalEnergySaved = 2.4;
-            appState.stats.optimalHours = 18;
         }
 
         function initializeColorPicker() {
@@ -1023,13 +973,7 @@
                 updateAlertsUI();
             });
             document.getElementById("saveThresholdsBtn").addEventListener("click", saveThresholds);
-            document.getElementById("exportDataBtn").addEventListener("click", exportDataCsv);
-            ["autoAdjustSpectrum", "nightModeAuto", "energySaveMode"].forEach((id) => {
-                document.getElementById(id).addEventListener("change", function() {
-                    appState.settings.automation[id] = this.checked;
-                });
-            });
-        }
+            document.getElementById("exportDataBtn").addEventListener("click", exportDataCsv);        }
 
         function applyLightPreset(preset) {
             appState.mode = preset.mode;
@@ -1093,8 +1037,6 @@
             updateStatusBadge("humidityStatus", appState.sensors.humidity, appState.settings.humidityThreshold.min, appState.settings.humidityThreshold.max);
             updateLEDStatus();
             document.getElementById("avgLight").textContent = Math.round(appState.sensors.light) + " lux";
-            document.getElementById("totalEnergySaved").textContent = appState.stats.totalEnergySaved + " kWh";
-            document.getElementById("optimalHours").textContent = appState.stats.optimalHours + "h";
             document.getElementById("lastUpdate").textContent = new Date().toLocaleTimeString();
             updateCharts();
         }
@@ -1184,7 +1126,7 @@
             badge.textContent = appState.alerts.length;
             document.getElementById("alertCount").textContent = appState.alerts.length + " alerts";
             if (appState.alerts.length === 0) {
-                list.innerHTML = `<div class="empty-state"><i class="ph ph-check-circle fs-1 text-success"></i><p class="mt-2 mb-0">All systems optimal</p></div>`;
+                list.innerHTML = `<div class="empty-state"><i class="ph ph-check-circle fs-1 text-success"></i><p class="mt-2 mb-0">No alerts</p></div>`;
             } else {
                 list.innerHTML = appState.alerts.map((a) => `
 <div class="alert-item alert-${escapeHTML(a.severity)} p-3 mb-2 rounded bg-body-secondary"><strong>${escapeHTML(a.title)}</strong><p class="small mb-0">${escapeHTML(a.message)}</p></div>
