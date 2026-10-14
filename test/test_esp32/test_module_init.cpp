@@ -205,13 +205,16 @@ void test_led_control_buildStatusMessage_reflects_runtime_state() {
         static_cast<uint8_t>(ack.result)
     );
 
-    const StatusMessage status = LedControl::buildStatusMessage(3U);
+    const StatusMessage status = LedControl::buildStatusMessage(DegradedTier::WIFI_RETRY_LIMIT);
 
     TEST_ASSERT_EQUAL_UINT8(
         static_cast<uint8_t>(DeviceMode::MANUAL),
         static_cast<uint8_t>(status.mode)
     );
-    TEST_ASSERT_EQUAL_UINT8(3U, status.degraded_tier);
+    TEST_ASSERT_EQUAL_UINT8(
+        static_cast<uint8_t>(DegradedTier::WIFI_RETRY_LIMIT),
+        static_cast<uint8_t>(status.degraded_tier)
+    );
     assertLedEqual(desired, status.led);
 }
 

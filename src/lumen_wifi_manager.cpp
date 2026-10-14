@@ -16,14 +16,14 @@ static const char* TAG = "wifi_manager";
 static bool is_initialized = false;
 static bool was_connected = false;
 static bool connection_in_progress = false;
-static uint8_t degraded_tier = 0;
+static DegradedTier degraded_tier = DegradedTier::NONE;
 static uint8_t failure_count = 0;
 static uint32_t backoff_ms = WIFI_BACKOFF_BASE_MS;
 static uint64_t next_attempt_ms = 0;
 static uint64_t connect_deadline_ms = 0;
 
 void resetState() {
-    degraded_tier = 0;
+    degraded_tier = DegradedTier::NONE;
     failure_count = 0;
     backoff_ms = WIFI_BACKOFF_BASE_MS;
     next_attempt_ms = 0;
@@ -68,7 +68,11 @@ void recordReconnectFailure() {
         ++failure_count;
     }
 
-    degraded_tier = (failure_count >= WIFI_FAILURE_THRESHOLD) ? 2U : 1U;
+    if (failure_count >= WIFI_FAILURE_THRESHOLD) {
+        degraded_tier = DegradedTier::WIFI_RETRY_LIMIT;
+    } else {
+        degraded_tier = DegradedTier::WIFI_RETRYING;
+    }
 }
 
 void logConnectionChange(bool is_connected) {
@@ -162,7 +166,7 @@ bool isConnected() {
     return WiFi.status() == WL_CONNECTED;
 }
 
-uint8_t getDegradedTier() { return degraded_tier; }
+DegradedTier getDegradedTier() { return degraded_tier; }
 
 void resetReconnect() { resetState(); }
 }  // namespace WifiManager

@@ -14,6 +14,13 @@ enum class CommandKind : uint8_t { LED_CONTROL = 0, CONFIG_UPDATE = 1, MODE_CHAN
 
 enum class AckResult : uint8_t { APPLIED = 0, REJECTED = 1, DEFERRED = 2 };
 
+// Wi-Fi link health, published as the status "degraded_tier" byte.
+enum class DegradedTier : uint8_t {
+    NONE = 0,              // no failed connect attempt since the last good link
+    WIFI_RETRYING = 1,     // fewer than WIFI_FAILURE_THRESHOLD failed attempts
+    WIFI_RETRY_LIMIT = 2,  // WIFI_FAILURE_THRESHOLD or more failed attempts
+};
+
 struct ThresholdConfig {
     float temp_min_c;
     float temp_max_c;
@@ -52,7 +59,7 @@ struct StatusMessage {
     uint64_t timestamp_ms;
     DeviceMode mode;
     LedState led;
-    uint8_t degraded_tier;
+    DegradedTier degraded_tier;
     uint32_t uptime_sec;
 };
 

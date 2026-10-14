@@ -366,7 +366,7 @@ DeviceMode getCurrentMode() {
     return mode;
 }
 
-StatusMessage buildStatusMessage(uint8_t degraded_tier) {
+StatusMessage buildStatusMessage(DegradedTier degraded_tier) {
     DeviceMode mode = DeviceMode::AUTONOMOUS;
     LedState led = {};
     snapshotState(mode, led);

@@ -95,7 +95,7 @@ static char cmd_mode_topic[TOPIC_LEN] = {};
 
 static uint32_t reconnect_backoff_ms = MQTT_BACKOFF_BASE_MS;
 static uint64_t next_connect_ms = 0;
-static bool (*wifi_connected_fn)() = nullptr;
+static WifiConnectedFn wifi_connected_fn = nullptr;
 static MqttInboundCallback inbound_callback = nullptr;
 
 bool defaultWifiConnected() { return WifiManager::isConnected(); }
@@ -262,7 +262,7 @@ bool encodeStatus(
     StaticJsonDocument<STATUS_DOC_SIZE> doc;
     doc["timestamp_ms"] = status.timestamp_ms;
     doc["mode"] = static_cast<uint8_t>(status.mode);
-    doc["degraded_tier"] = status.degraded_tier;
+    doc["degraded_tier"] = static_cast<uint8_t>(status.degraded_tier);
     doc["uptime_sec"] = status.uptime_sec;
 
     JsonObject led_obj = doc.createNestedObject("led");
@@ -398,7 +398,7 @@ void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
 }  // namespace
 
 namespace MqttClient {
-bool init(const char* device_id, Client& net_client, bool (*wifi_connected)()) {
+bool init(const char* device_id, Client& net_client, WifiConnectedFn wifi_connected) {
     if (!hasText(device_id)) {
         ESP_LOGE(TAG, "device id missing");
         return false;
