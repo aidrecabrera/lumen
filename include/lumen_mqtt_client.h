@@ -17,8 +17,6 @@ bool publishTelemetry(const SensorReading& reading);
 bool publishStatus(const StatusMessage& status);
 bool publishEnergy(const EnergyMessage& energy);
 bool publishAck(const AckMessage& ack);
-bool setupSubscriptions();
 void registerInboundCallback(MqttInboundCallback callback);
-bool isConnected();
 
 }  // namespace MqttClient

@@ -80,7 +80,7 @@ void setup() {
     Serial.begin(115200);
     delay(100);
 
-    ESP_LOGI(TAG, "spot firmware starting (boot failures: %u)", boot_failure_count);
+    ESP_LOGI(TAG, "lumen firmware starting (boot failures: %u)", boot_failure_count);
 
     requireBootStep(initWatchdog(), "watchdog");
 

@@ -129,7 +129,6 @@ void setEnvelopeBase(CommandEnvelope& out_command, const char* command_id, Comma
     memset(&out_command, 0, sizeof(out_command));
     copyText(out_command.command_id, sizeof(out_command.command_id), command_id);
     out_command.kind = kind;
-    out_command.received_timestamp_ms = getNowMs();
 }
 
 bool decodeLedPayload(const uint8_t* payload, uint16_t length, CommandEnvelope& out_command) {

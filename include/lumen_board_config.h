@@ -58,9 +58,8 @@ static constexpr const char* MQTT_TOPIC_CMD_MODE_SUFFIX = "command/mode";
 
 static constexpr uint16_t MQTT_KEEPALIVE_SEC = 30;
 static constexpr uint32_t MQTT_HEARTBEAT_INTERVAL_MS = 30000;
-static constexpr uint8_t MQTT_QOS_TELEMETRY = 0;
+// PubSubClient publishes at QoS 0 only. These set the will and subscribe QoS.
 static constexpr uint8_t MQTT_QOS_STATUS = 1;
-static constexpr uint8_t MQTT_QOS_ENERGY = 1;
 static constexpr uint8_t MQTT_QOS_COMMAND = 1;
 
 static constexpr uint16_t TELEMETRY_DOC_SIZE = 128;

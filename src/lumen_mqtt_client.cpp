@@ -579,32 +579,5 @@ bool publishAck(const AckMessage& ack) {
     return publishPayload(ack_topic, payload_buf, encoded_len);
 }
 
-bool setupSubscriptions() {
-    if (!is_initialized) {
-        return false;
-    }
-
-    LockGuard lock(mqtt_mutex);
-    if (!lock.locked()) {
-        ESP_LOGW(TAG, "subscribe lock timeout");
-        return false;
-    }
-
-    return setupSubscriptionsLocked();
-}
-
 void registerInboundCallback(MqttInboundCallback callback) { inbound_callback = callback; }
-
-bool isConnected() {
-    if (!is_initialized) {
-        return false;
-    }
-
-    LockGuard lock(mqtt_mutex, pdMS_TO_TICKS(10));
-    if (!lock.locked()) {
-        return false;
-    }
-
-    return broker_client.connected();
-}
 }  // namespace MqttClient

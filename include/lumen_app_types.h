@@ -69,7 +69,6 @@ struct CommandEnvelope {
     DeviceMode desired_mode;
     LedState desired_led;
     ThresholdConfig desired_thresholds;
-    uint64_t received_timestamp_ms;
 };
 
 struct EnergyMessage {
