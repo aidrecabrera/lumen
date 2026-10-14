@@ -44,6 +44,22 @@ bool endsWith(const char* text, const char* suffix) {
     return strcmp(text + text_len - suffix_len, suffix) == 0;
 }
 
+uint32_t nextBackoffMs(uint32_t current_backoff_ms, uint32_t max_backoff_ms) {
+    if (current_backoff_ms >= max_backoff_ms) {
+        return max_backoff_ms;
+    }
+
+    const uint32_t doubled_backoff_ms = current_backoff_ms * 2U;
+    return (doubled_backoff_ms > max_backoff_ms) ? max_backoff_ms : doubled_backoff_ms;
+}
+
+uint32_t backoffWithJitterMs(uint32_t backoff_ms, uint32_t random_value) {
+    const uint32_t jitter_window_ms = backoff_ms / 4U;
+    const uint32_t jitter_ms =
+        (jitter_window_ms == 0U) ? 0U : (random_value % (jitter_window_ms + 1U));
+    return backoff_ms + jitter_ms;
+}
+
 uint64_t getNowMs() {
 #if defined(ESP_PLATFORM)
     return static_cast<uint64_t>(esp_timer_get_time() / 1000ULL);

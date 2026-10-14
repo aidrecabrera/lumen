@@ -141,3 +141,16 @@ void test_energy_total_nan_invalid() {
 void test_energy_total_inf_invalid() {
     TEST_ASSERT_FALSE(isEnergyTotalValid(std::numeric_limits<float>::infinity()));
 }
+void test_parseDeviceMode_accepts_known_modes() {
+    DeviceMode mode = DeviceMode::MANUAL;
+    TEST_ASSERT_TRUE(parseDeviceMode(0U, mode));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(DeviceMode::AUTONOMOUS), static_cast<uint8_t>(mode));
+    TEST_ASSERT_TRUE(parseDeviceMode(1U, mode));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(DeviceMode::MANUAL), static_cast<uint8_t>(mode));
+}
+
+void test_parseDeviceMode_rejects_unknown_mode() {
+    DeviceMode mode = DeviceMode::MANUAL;
+    TEST_ASSERT_FALSE(parseDeviceMode(2U, mode));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(DeviceMode::MANUAL), static_cast<uint8_t>(mode));
+}

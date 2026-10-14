@@ -25,7 +25,7 @@ static ThresholdConfig current_thresholds = {};
 static StaticSemaphore_t state_mutex_storage;
 static SemaphoreHandle_t state_mutex = nullptr;
 
-uint32_t getUptimeSec() { return static_cast<uint32_t>(esp_timer_get_time() / 1000000ULL); }
+uint32_t getUptimeSec() { return static_cast<uint32_t>(getNowMs() / 1000ULL); }
 
 bool ensureStateMutex() {
     if (state_mutex != nullptr) {

@@ -128,11 +128,12 @@ void applyDefaultConfig(RuntimeConfig& config) {
 }
 
 DeviceMode sanitizeMode(uint8_t raw_mode) {
-    if (raw_mode == static_cast<uint8_t>(DeviceMode::MANUAL)) {
-        return DeviceMode::MANUAL;
+    DeviceMode mode = DeviceMode::AUTONOMOUS;
+    if (!parseDeviceMode(raw_mode, mode)) {
+        return DeviceMode::AUTONOMOUS;
     }
 
-    return DeviceMode::AUTONOMOUS;
+    return mode;
 }
 
 bool hasTextInBuffer(const char* text, size_t max_len) {
@@ -222,6 +223,16 @@ bool loadRuntimeConfigBlob(RuntimeConfig& config) {
     return true;
 }
 
+// Caller holds the config lock. RAM changes only after the NVS write succeeds.
+bool commitRuntimeConfigLocked(const RuntimeConfig& next) {
+    if (!writeRuntimeConfigBlob(next)) {
+        return false;
+    }
+
+    runtime_config = next;
+    return true;
+}
+
 void loadEnergyTotal(RuntimeConfig& config) {
     const float stored = preferences.getFloat(KEY_ENERGY_WH, config.energy_total_wh);
 
@@ -293,30 +304,18 @@ bool saveThresholds(const ThresholdConfig& thresholds) {
     lockConfig();
     RuntimeConfig next = runtime_config;
     next.thresholds = thresholds;
-
-    if (!writeRuntimeConfigBlob(next)) {
-        unlockConfig();
-        return false;
-    }
-
-    runtime_config.thresholds = thresholds;
+    const bool ok = commitRuntimeConfigLocked(next);
     unlockConfig();
-    return true;
+    return ok;
 }
 
 bool saveMode(DeviceMode mode) {
     lockConfig();
     RuntimeConfig next = runtime_config;
     next.mode = mode;
-
-    if (!writeRuntimeConfigBlob(next)) {
-        unlockConfig();
-        return false;
-    }
-
-    runtime_config.mode = mode;
+    const bool ok = commitRuntimeConfigLocked(next);
     unlockConfig();
-    return true;
+    return ok;
 }
 
 bool saveLedState(const LedState& led) {
@@ -328,15 +327,9 @@ bool saveLedState(const LedState& led) {
     lockConfig();
     RuntimeConfig next = runtime_config;
     next.led = led;
-
-    if (!writeRuntimeConfigBlob(next)) {
-        unlockConfig();
-        return false;
-    }
-
-    runtime_config.led = led;
+    const bool ok = commitRuntimeConfigLocked(next);
     unlockConfig();
-    return true;
+    return ok;
 }
 
 bool saveEnergyTotal(float total_wh) {
@@ -367,16 +360,8 @@ bool saveRuntimeConfig(const RuntimeConfig& config) {
     next.mode = config.mode;
     next.thresholds = config.thresholds;
     next.led = config.led;
-
-    if (!writeRuntimeConfigBlob(next)) {
-        unlockConfig();
-        return false;
-    }
-
-    runtime_config.mode = next.mode;
-    runtime_config.thresholds = next.thresholds;
-    runtime_config.led = next.led;
+    const bool ok = commitRuntimeConfigLocked(next);
     unlockConfig();
-    return true;
+    return ok;
 }
 }  // namespace ConfigManager

@@ -57,7 +57,8 @@ bool readPercentField(JsonVariantConst value, uint8_t& out_value) {
 }
 
 bool readFloatField(JsonVariantConst value, float& out_value) {
-    if (!value.is<float>() && !value.is<int>() && !value.is<unsigned int>()) {
+    // is<float>() accepts integer values too (ArduinoJson 6 NUMBER_BIT check).
+    if (!value.is<float>()) {
         return false;
     }
 
@@ -77,18 +78,12 @@ bool readModeField(JsonVariantConst value, DeviceMode& out_mode) {
         return false;
     }
 
-    if (raw_mode == static_cast<uint8_t>(DeviceMode::AUTONOMOUS)) {
-        out_mode = DeviceMode::AUTONOMOUS;
-        return true;
+    if (!parseDeviceMode(raw_mode, out_mode)) {
+        ESP_LOGW(TAG, "mode invalid: %u", raw_mode);
+        return false;
     }
 
-    if (raw_mode == static_cast<uint8_t>(DeviceMode::MANUAL)) {
-        out_mode = DeviceMode::MANUAL;
-        return true;
-    }
-
-    ESP_LOGW(TAG, "mode invalid: %u", raw_mode);
-    return false;
+    return true;
 }
 
 template <size_t DocSize>

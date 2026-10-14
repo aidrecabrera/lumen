@@ -28,17 +28,13 @@ bool initWatchdog() {
     watchdog_config.trigger_panic = true;
 
     const esp_err_t init_result = esp_task_wdt_init(&watchdog_config);
-    if (init_result != ESP_OK && init_result != ESP_ERR_INVALID_STATE) {
-        ESP_LOGE(TAG, "watchdog init failed: %s", esp_err_to_name(init_result));
-        return false;
-    }
 #else
     const esp_err_t init_result = esp_task_wdt_init(WATCHDOG_TIMEOUT_MS / 1000U, true);
+#endif
     if (init_result != ESP_OK && init_result != ESP_ERR_INVALID_STATE) {
         ESP_LOGE(TAG, "watchdog init failed: %s", esp_err_to_name(init_result));
         return false;
     }
-#endif
 
     const esp_err_t add_result = esp_task_wdt_add(nullptr);
     if (add_result != ESP_OK && add_result != ESP_ERR_INVALID_STATE) {
@@ -70,6 +66,14 @@ void failBoot(const char* reason) {
     vTaskDelay(pdMS_TO_TICKS(100));
     ESP.restart();
 }
+
+// failBoot() does not return: it restarts the chip or parks it in safe mode.
+void requireBootStep(bool step_ok, const char* step_name) {
+    if (!step_ok) {
+        failBoot(step_name);
+    }
+    esp_task_wdt_reset();
+}
 }  // namespace
 
 #ifndef PIO_UNIT_TESTING
@@ -79,56 +83,23 @@ void setup() {
 
     ESP_LOGI(TAG, "spot firmware starting (boot failures: %u)", boot_failure_count);
 
-    if (!initWatchdog()) {
-        failBoot("watchdog");
-    }
-    esp_task_wdt_reset();
+    requireBootStep(initWatchdog(), "watchdog");
 
     if (!ConfigManager::init()) {
         ESP_LOGW(TAG, "config degraded to defaults");
     }
     esp_task_wdt_reset();
 
-    if (!Sensors::init()) {
-        failBoot("sensors");
-    }
-    esp_task_wdt_reset();
-
-    if (!LedControl::init()) {
-        failBoot("led control");
-    }
-    esp_task_wdt_reset();
-
-    if (!EnergyTracker::init()) {
-        failBoot("energy tracker");
-    }
-    esp_task_wdt_reset();
-
-    if (!WifiManager::init()) {
-        failBoot("wifi");
-    }
-    esp_task_wdt_reset();
+    requireBootStep(Sensors::init(), "sensors");
+    requireBootStep(LedControl::init(), "led control");
+    requireBootStep(EnergyTracker::init(), "energy tracker");
+    requireBootStep(WifiManager::init(), "wifi");
 
     const RuntimeConfig config = ConfigManager::getConfigSnapshot();
-    if (!MqttClient::init(config.device_id)) {
-        failBoot("mqtt");
-    }
-    esp_task_wdt_reset();
-
-    if (!TaskManager::createQueues()) {
-        failBoot("queues");
-    }
-    esp_task_wdt_reset();
-
-    if (!CommandHandler::init()) {
-        failBoot("command handler");
-    }
-    esp_task_wdt_reset();
-
-    if (!TaskManager::createTasks()) {
-        failBoot("tasks");
-    }
-    esp_task_wdt_reset();
+    requireBootStep(MqttClient::init(config.device_id), "mqtt");
+    requireBootStep(TaskManager::createQueues(), "queues");
+    requireBootStep(CommandHandler::init(), "command handler");
+    requireBootStep(TaskManager::createTasks(), "tasks");
 
     boot_failure_count = 0;
     ESP_LOGI(TAG, "boot complete for %s", config.device_id);

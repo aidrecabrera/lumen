@@ -23,7 +23,8 @@ static constexpr uint32_t MQTT_BACKOFF_MAX_MS = 30000U;
 
 static constexpr size_t TOPIC_LEN = 96U;
 static constexpr size_t ACK_TOPIC_LEN = 128U;
-static constexpr size_t CLIENT_ID_LEN = sizeof("lumen-fw-") + DEVICE_ID_MAX_LEN;
+static constexpr char CLIENT_ID_PREFIX[] = "lumen-fw-";
+static constexpr size_t CLIENT_ID_LEN = sizeof(CLIENT_ID_PREFIX) + DEVICE_ID_MAX_LEN;
 static constexpr size_t ACK_DOC_SIZE = STATUS_DOC_SIZE + 128U;
 
 static constexpr size_t INBOUND_QUEUE_LENGTH = 4U;
@@ -155,7 +156,7 @@ bool buildAckTopic(char* out_topic, size_t out_len, const char* command_id) {
 
 bool buildClientId() {
     const int written =
-        snprintf(client_id_buf, sizeof(client_id_buf), "lumen-fw-%s", device_id_buf);
+        snprintf(client_id_buf, sizeof(client_id_buf), "%s%s", CLIENT_ID_PREFIX, device_id_buf);
     return (written > 0) && (static_cast<size_t>(written) < sizeof(client_id_buf));
 }
 
@@ -179,27 +180,14 @@ bool buildTopics() {
            has_cmd_config && has_cmd_mode;
 }
 
-uint32_t nextBackoffMs(uint32_t current_backoff_ms) {
-    if (current_backoff_ms >= MQTT_BACKOFF_MAX_MS) {
-        return MQTT_BACKOFF_MAX_MS;
-    }
-
-    const uint32_t doubled_backoff_ms = current_backoff_ms * 2U;
-    return (doubled_backoff_ms > MQTT_BACKOFF_MAX_MS) ? MQTT_BACKOFF_MAX_MS : doubled_backoff_ms;
-}
-
 void resetReconnectState() {
     reconnect_backoff_ms = MQTT_BACKOFF_BASE_MS;
     next_connect_ms = 0;
 }
 
 void scheduleReconnect(uint64_t now_ms) {
-    const uint32_t jitter_window_ms = reconnect_backoff_ms / 4U;
-    const uint32_t jitter_ms =
-        (jitter_window_ms == 0U) ? 0U : (esp_random() % (jitter_window_ms + 1U));
-
-    next_connect_ms = now_ms + reconnect_backoff_ms + jitter_ms;
-    reconnect_backoff_ms = nextBackoffMs(reconnect_backoff_ms);
+    next_connect_ms = now_ms + backoffWithJitterMs(reconnect_backoff_ms, esp_random());
+    reconnect_backoff_ms = nextBackoffMs(reconnect_backoff_ms, MQTT_BACKOFF_MAX_MS);
 }
 
 void fillLedObject(JsonObject led_obj, const LedState& led) {
@@ -211,6 +199,17 @@ void fillLedObject(JsonObject led_obj, const LedState& led) {
     led_obj["red_dist_pct"] = led.red_dist_pct;
     led_obj["blue_dist_pct"] = led.blue_dist_pct;
     led_obj["far_red_dist_pct"] = led.far_red_dist_pct;
+}
+
+bool serializeDocument(
+    const JsonDocument& doc, uint8_t* payload_buf, size_t payload_len, size_t& encoded_len
+) {
+    if (doc.overflowed()) {
+        return false;
+    }
+
+    encoded_len = serializeMsgPack(doc, payload_buf, payload_len);
+    return encoded_len > 0U;
 }
 
 bool publishPayloadLocked(
@@ -254,12 +253,7 @@ bool encodeTelemetry(
     doc["humidity_pct"] = reading.humidity_pct;
     doc["sequence"] = reading.sequence;
 
-    if (doc.overflowed()) {
-        return false;
-    }
-
-    encoded_len = serializeMsgPack(doc, payload_buf, payload_len);
-    return encoded_len > 0U;
+    return serializeDocument(doc, payload_buf, payload_len, encoded_len);
 }
 
 bool encodeStatus(
@@ -274,12 +268,7 @@ bool encodeStatus(
     JsonObject led_obj = doc.createNestedObject("led");
     fillLedObject(led_obj, status.led);
 
-    if (doc.overflowed()) {
-        return false;
-    }
-
-    encoded_len = serializeMsgPack(doc, payload_buf, payload_len);
-    return encoded_len > 0U;
+    return serializeDocument(doc, payload_buf, payload_len, encoded_len);
 }
 
 bool encodeEnergy(
@@ -292,12 +281,7 @@ bool encodeEnergy(
     doc["light_on_sec"] = energy.light_on_sec;
     doc["max_brightness_sec"] = energy.max_brightness_sec;
 
-    if (doc.overflowed()) {
-        return false;
-    }
-
-    encoded_len = serializeMsgPack(doc, payload_buf, payload_len);
-    return encoded_len > 0U;
+    return serializeDocument(doc, payload_buf, payload_len, encoded_len);
 }
 
 bool encodeAck(
@@ -313,12 +297,7 @@ bool encodeAck(
     JsonObject led_obj = doc.createNestedObject("led");
     fillLedObject(led_obj, ack.led);
 
-    if (doc.overflowed()) {
-        return false;
-    }
-
-    encoded_len = serializeMsgPack(doc, payload_buf, payload_len);
-    return encoded_len > 0U;
+    return serializeDocument(doc, payload_buf, payload_len, encoded_len);
 }
 
 bool isCommandTopic(const char* topic) {

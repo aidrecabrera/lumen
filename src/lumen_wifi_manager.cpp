@@ -22,15 +22,6 @@ static uint32_t backoff_ms = WIFI_BACKOFF_BASE_MS;
 static uint64_t next_attempt_ms = 0;
 static uint64_t connect_deadline_ms = 0;
 
-uint32_t nextBackoffMs(uint32_t current_backoff_ms) {
-    if (current_backoff_ms >= WIFI_BACKOFF_MAX_MS) {
-        return WIFI_BACKOFF_MAX_MS;
-    }
-
-    const uint32_t doubled_backoff_ms = current_backoff_ms * 2U;
-    return (doubled_backoff_ms > WIFI_BACKOFF_MAX_MS) ? WIFI_BACKOFF_MAX_MS : doubled_backoff_ms;
-}
-
 void resetState() {
     degraded_tier = 0;
     failure_count = 0;
@@ -68,12 +59,8 @@ void startConnectionAttempt(uint64_t now_ms) {
 }
 
 void scheduleReconnect(uint64_t now_ms) {
-    const uint32_t jitter_window_ms = backoff_ms / 4U;
-    const uint32_t jitter_ms =
-        (jitter_window_ms == 0U) ? 0U : (esp_random() % (jitter_window_ms + 1U));
-
-    next_attempt_ms = now_ms + backoff_ms + jitter_ms;
-    backoff_ms = nextBackoffMs(backoff_ms);
+    next_attempt_ms = now_ms + backoffWithJitterMs(backoff_ms, esp_random());
+    backoff_ms = nextBackoffMs(backoff_ms, WIFI_BACKOFF_MAX_MS);
 }
 
 void recordReconnectFailure() {

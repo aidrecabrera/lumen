@@ -21,3 +21,17 @@ bool isLedStateValid(const LedState& led) {
 }
 
 bool isEnergyTotalValid(float total_wh) { return isfinite(total_wh) && (total_wh >= 0.0f); }
+
+bool parseDeviceMode(uint8_t raw_mode, DeviceMode& out_mode) {
+    if (raw_mode == static_cast<uint8_t>(DeviceMode::AUTONOMOUS)) {
+        out_mode = DeviceMode::AUTONOMOUS;
+        return true;
+    }
+
+    if (raw_mode == static_cast<uint8_t>(DeviceMode::MANUAL)) {
+        out_mode = DeviceMode::MANUAL;
+        return true;
+    }
+
+    return false;
+}

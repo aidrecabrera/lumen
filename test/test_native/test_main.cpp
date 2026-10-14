@@ -43,6 +43,12 @@ void test_endsWith_empty_suffix();
 void test_endsWith_null_text();
 void test_endsWith_null_suffix();
 void test_getNowMs_monotonic_non_decreasing();
+void test_nextBackoffMs_doubles_below_max();
+void test_nextBackoffMs_caps_at_max();
+void test_backoffWithJitterMs_stays_in_window();
+void test_backoffWithJitterMs_no_jitter_for_tiny_backoff();
+void test_parseDeviceMode_accepts_known_modes();
+void test_parseDeviceMode_rejects_unknown_mode();
 
 
 
@@ -87,6 +93,12 @@ int main() {
     RUN_TEST(test_endsWith_null_text);
     RUN_TEST(test_endsWith_null_suffix);
     RUN_TEST(test_getNowMs_monotonic_non_decreasing);
+    RUN_TEST(test_nextBackoffMs_doubles_below_max);
+    RUN_TEST(test_nextBackoffMs_caps_at_max);
+    RUN_TEST(test_backoffWithJitterMs_stays_in_window);
+    RUN_TEST(test_backoffWithJitterMs_no_jitter_for_tiny_backoff);
+    RUN_TEST(test_parseDeviceMode_accepts_known_modes);
+    RUN_TEST(test_parseDeviceMode_rejects_unknown_mode);
 
     return UNITY_END();
 }

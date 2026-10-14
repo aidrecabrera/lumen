@@ -83,3 +83,22 @@ void test_getNowMs_monotonic_non_decreasing() {
     const uint64_t t2 = getNowMs();
     TEST_ASSERT_TRUE(t2 >= t1);
 }
+void test_nextBackoffMs_doubles_below_max() {
+    TEST_ASSERT_EQUAL_UINT32(2000U, nextBackoffMs(1000U, 30000U));
+}
+
+void test_nextBackoffMs_caps_at_max() {
+    TEST_ASSERT_EQUAL_UINT32(30000U, nextBackoffMs(16000U, 30000U));
+    TEST_ASSERT_EQUAL_UINT32(30000U, nextBackoffMs(30000U, 30000U));
+    TEST_ASSERT_EQUAL_UINT32(30000U, nextBackoffMs(40000U, 30000U));
+}
+
+void test_backoffWithJitterMs_stays_in_window() {
+    TEST_ASSERT_EQUAL_UINT32(1000U, backoffWithJitterMs(1000U, 0U));
+    TEST_ASSERT_EQUAL_UINT32(1250U, backoffWithJitterMs(1000U, 250U));
+    TEST_ASSERT_EQUAL_UINT32(1000U, backoffWithJitterMs(1000U, 251U));
+}
+
+void test_backoffWithJitterMs_no_jitter_for_tiny_backoff() {
+    TEST_ASSERT_EQUAL_UINT32(3U, backoffWithJitterMs(3U, 12345U));
+}

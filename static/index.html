@@ -663,6 +663,10 @@
         };
         let colorPicker = null;
         let updateInterval = null;
+        const LIGHT_LUX_MAX = 10000;
+        const HISTORY_SAMPLE_COUNT = 25;
+        const BRIGHTNESS_STEP_PCT = 5;
+        const LED_CHANNELS = ["red", "blue", "farRed"];
 
         function clamp(value, min, max) {
             return Math.min(max, Math.max(min, value));
@@ -716,11 +720,11 @@
 
         function initializeHistoricalData() {
             const now = Date.now();
-            for (let i = 24; i >= 0; i--) {
+            for (let i = HISTORY_SAMPLE_COUNT - 1; i >= 0; i--) {
                 const timestamp = now - i * 3600000;
                 const hour = new Date(timestamp).getHours();
                 const dayFactor = Math.sin(((hour - 6) * Math.PI) / 12);
-                const lightValue = Math.max(0, Math.min(10000, 5000 + dayFactor * 4500 + (Math.random() - 0.5) * 500));
+                const lightValue = clamp(5000 + dayFactor * 4500 + (Math.random() - 0.5) * 500, 0, LIGHT_LUX_MAX);
                 const tempValue = 22 + dayFactor * 4 + (Math.random() - 0.5) * 2;
                 const humidityValue = 70 - dayFactor * 8 + (Math.random() - 0.5) * 5;
                 appState.history.light.push(lightValue);
@@ -803,16 +807,13 @@
         }
 
         function updateWavelengthIndicators() {
-            const {
-                red,
-                blue,
-                farRed
-            } = appState.led.distribution;
-            document.getElementById("redIndicator").style.opacity = appState.led.wavelengths.red && red > 20 ? "1" : "0.4";
-            document.getElementById("blueIndicator").style.opacity = appState.led.wavelengths.blue && blue > 20 ? "1" : "0.4";
-            document.getElementById("farRedIndicator").style.opacity = appState.led.wavelengths.farRed && farRed > 20 ? "1" : "0.4";
+            const distribution = appState.led.distribution;
+            LED_CHANNELS.forEach((channel) => {
+                const isProminent = appState.led.wavelengths[channel] && distribution[channel] > 20;
+                document.getElementById(`${channel}Indicator`).style.opacity = isProminent ? "1" : "0.4";
+            });
             if (charts.wavelength) {
-                charts.wavelength.data.datasets[0].data = [red, blue, farRed];
+                charts.wavelength.data.datasets[0].data = LED_CHANNELS.map((channel) => distribution[channel]);
                 charts.wavelength.update("none");
             }
         }
@@ -974,41 +975,39 @@
 
         function setupEventListeners() {
             document.getElementById("optimizeBtn").addEventListener("click", function() {
-                appState.mode = "autonomous";
-                appState.led.wavelengths = {
-                    red: true,
-                    blue: true,
-                    farRed: false
-                };
-                appState.led.distribution = {
-                    red: 60,
-                    blue: 30,
-                    farRed: 10
-                };
-                updateModeUI();
-                if (colorPicker) colorPicker.color.hexString = "#ff4757";
-                updateLEDStatus();
-                updateWavelengthIndicators();
+                applyLightPreset({
+                    mode: "autonomous",
+                    wavelengths: {
+                        red: true,
+                        blue: true,
+                        farRed: false
+                    },
+                    distribution: {
+                        red: 60,
+                        blue: 30,
+                        farRed: 10
+                    },
+                    color: "#ff4757",
+                });
                 showToast("Optimized for Growth", "success");
                 addAlert("System optimized for growth", "info", "Optimization");
             });
             document.getElementById("nightModeBtn").addEventListener("click", function() {
-                appState.mode = "manual";
-                appState.led.brightness = 15;
-                appState.led.wavelengths = {
-                    red: false,
-                    blue: false,
-                    farRed: true
-                };
-                appState.led.distribution = {
-                    red: 10,
-                    blue: 10,
-                    farRed: 80
-                };
-                updateModeUI();
-                if (colorPicker) colorPicker.color.hexString = "#9b59b6";
-                updateLEDStatus();
-                updateWavelengthIndicators();
+                applyLightPreset({
+                    mode: "manual",
+                    brightness: 15,
+                    wavelengths: {
+                        red: false,
+                        blue: false,
+                        farRed: true
+                    },
+                    distribution: {
+                        red: 10,
+                        blue: 10,
+                        farRed: 80
+                    },
+                    color: "#9b59b6",
+                });
                 showToast("Night Mode Activated", "info");
             });
             document.getElementById("modeToggle").addEventListener("change", function() {
@@ -1020,7 +1019,7 @@
                 appState.led.power = this.checked;
                 updateLEDStatus();
             });
-            ["red", "blue", "farRed"].forEach((channel) => {
+            LED_CHANNELS.forEach((channel) => {
                 const id = `${channel}Wavelength`;
                 const control = document.getElementById(id);
                 if (!control) return;
@@ -1032,16 +1031,10 @@
                 });
             });
             document.getElementById("decreaseIntensity").addEventListener("click", function() {
-                if (appState.mode === "manual") {
-                    appState.led.brightness = Math.max(0, appState.led.brightness - 5);
-                    updateLEDStatus();
-                }
+                stepBrightness(-BRIGHTNESS_STEP_PCT);
             });
             document.getElementById("increaseIntensity").addEventListener("click", function() {
-                if (appState.mode === "manual") {
-                    appState.led.brightness = Math.min(100, appState.led.brightness + 5);
-                    updateLEDStatus();
-                }
+                stepBrightness(BRIGHTNESS_STEP_PCT);
             });
             document.getElementById("darkModeToggle").addEventListener("change", function() {
                 document.documentElement.setAttribute("data-bs-theme", this.checked ? "dark" : "light");
@@ -1065,6 +1058,27 @@
             });
         }
 
+        function applyLightPreset(preset) {
+            appState.mode = preset.mode;
+            if (preset.brightness !== undefined) {
+                appState.led.brightness = preset.brightness;
+            }
+            appState.led.wavelengths = preset.wavelengths;
+            appState.led.distribution = preset.distribution;
+            updateModeUI();
+            if (colorPicker) colorPicker.color.hexString = preset.color;
+            updateLEDStatus();
+            updateWavelengthIndicators();
+        }
+
+        function stepBrightness(deltaPct) {
+            if (appState.mode !== "manual") {
+                return;
+            }
+            appState.led.brightness = clamp(appState.led.brightness + deltaPct, 0, 100);
+            updateLEDStatus();
+        }
+
         function startSimulation() {
             updateInterval = setInterval(function() {
                 simulateSensorData();
@@ -1073,9 +1087,9 @@
         }
 
         function simulateSensorData() {
-            appState.sensors.light = Math.max(0, Math.min(10000, appState.sensors.light + (Math.random() - 0.5) * 500));
+            appState.sensors.light = clamp(appState.sensors.light + (Math.random() - 0.5) * 500, 0, LIGHT_LUX_MAX);
             appState.sensors.temperature = parseFloat((appState.sensors.temperature + (Math.random() - 0.5) * 0.2).toFixed(1));
-            appState.sensors.humidity = Math.max(0, Math.min(100, Math.round(appState.sensors.humidity + (Math.random() - 0.5) * 1)));
+            appState.sensors.humidity = clamp(Math.round(appState.sensors.humidity + (Math.random() - 0.5) * 1), 0, 100);
             if (appState.led.power) {
                 appState.energy.total += 0.001;
             }
@@ -1088,7 +1102,7 @@
             appState.history.humidity.push(appState.sensors.humidity);
             appState.history.timestamps.push(Date.now());
 
-            while (appState.history.timestamps.length > 25) {
+            while (appState.history.timestamps.length > HISTORY_SAMPLE_COUNT) {
                 appState.history.light.shift();
                 appState.history.temperature.shift();
                 appState.history.humidity.shift();
@@ -1155,9 +1169,9 @@
             powerBadge.textContent = appState.led.power ? "ON" : "OFF";
             document.getElementById("ledBrightness").textContent = appState.led.brightness;
             document.getElementById("masterPower").checked = appState.led.power;
-            document.getElementById("redWavelength").checked = appState.led.wavelengths.red;
-            document.getElementById("blueWavelength").checked = appState.led.wavelengths.blue;
-            document.getElementById("farRedWavelength").checked = appState.led.wavelengths.farRed;
+            LED_CHANNELS.forEach((channel) => {
+                document.getElementById(`${channel}Wavelength`).checked = appState.led.wavelengths[channel];
+            });
             document.getElementById("activeWavelengths").textContent = getActiveWavelengthLabel();
             updateIntensityDisplay();
         }

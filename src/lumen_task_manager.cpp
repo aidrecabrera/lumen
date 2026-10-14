@@ -54,36 +54,20 @@ void registerCurrentTaskWithWatchdog(const char* task_name) {
     }
 }
 
+void deleteQueue(QueueHandle_t& queue_handle) {
+    if (queue_handle != nullptr) {
+        vQueueDelete(queue_handle);
+        queue_handle = nullptr;
+    }
+}
+
 void clearQueues() {
-    if (sensor_to_mqtt_queue != nullptr) {
-        vQueueDelete(sensor_to_mqtt_queue);
-        sensor_to_mqtt_queue = nullptr;
-    }
-
-    if (sensor_to_led_queue != nullptr) {
-        vQueueDelete(sensor_to_led_queue);
-        sensor_to_led_queue = nullptr;
-    }
-
-    if (command_dispatch_queue != nullptr) {
-        vQueueDelete(command_dispatch_queue);
-        command_dispatch_queue = nullptr;
-    }
-
-    if (status_to_mqtt_queue != nullptr) {
-        vQueueDelete(status_to_mqtt_queue);
-        status_to_mqtt_queue = nullptr;
-    }
-
-    if (energy_to_mqtt_queue != nullptr) {
-        vQueueDelete(energy_to_mqtt_queue);
-        energy_to_mqtt_queue = nullptr;
-    }
-
-    if (ack_to_mqtt_queue != nullptr) {
-        vQueueDelete(ack_to_mqtt_queue);
-        ack_to_mqtt_queue = nullptr;
-    }
+    deleteQueue(sensor_to_mqtt_queue);
+    deleteQueue(sensor_to_led_queue);
+    deleteQueue(command_dispatch_queue);
+    deleteQueue(status_to_mqtt_queue);
+    deleteQueue(energy_to_mqtt_queue);
+    deleteQueue(ack_to_mqtt_queue);
 }
 
 bool areLedStatesEqual(const LedState& left, const LedState& right) {
@@ -95,10 +79,10 @@ bool areLedStatesEqual(const LedState& left, const LedState& right) {
            (left.far_red_dist_pct == right.far_red_dist_pct);
 }
 
-bool sendSensorReading(
-    QueueHandle_t queue_handle, const SensorReading& reading, const char* queue_name
-) {
-    const BaseType_t send_result = xQueueSend(queue_handle, &reading, 0);
+// Non-blocking send. The item type must match the queue item size.
+template <typename T>
+bool sendToQueue(QueueHandle_t queue_handle, const T& item, const char* queue_name) {
+    const BaseType_t send_result = xQueueSend(queue_handle, &item, 0);
     if (send_result == pdTRUE) {
         return true;
     }
@@ -107,34 +91,21 @@ bool sendSensorReading(
     return false;
 }
 
-bool sendStatusMessage(const StatusMessage& status) {
-    const BaseType_t send_result = xQueueSend(status_to_mqtt_queue, &status, 0);
-    if (send_result == pdTRUE) {
-        return true;
+// Publishes queued items in order. A failed publish keeps the item at the head for retry.
+template <typename T>
+void drainPublishQueue(QueueHandle_t queue_handle, bool (*publish)(const T&), const char* label) {
+    T item = {};
+
+    while (xQueuePeek(queue_handle, &item, 0) == pdTRUE) {
+        esp_task_wdt_reset();
+
+        if (!publish(item)) {
+            ESP_LOGW(TAG, "%s publish failed, retained for retry", label);
+            break;
+        }
+
+        xQueueReceive(queue_handle, &item, 0);
     }
-
-    ESP_LOGW(TAG, "queue full status_to_mqtt");
-    return false;
-}
-
-bool sendAckMessage(const AckMessage& ack) {
-    const BaseType_t send_result = xQueueSend(ack_to_mqtt_queue, &ack, 0);
-    if (send_result == pdTRUE) {
-        return true;
-    }
-
-    ESP_LOGW(TAG, "queue full ack_to_mqtt");
-    return false;
-}
-
-bool sendEnergyMessage(const EnergyMessage& energy) {
-    const BaseType_t send_result = xQueueSend(energy_to_mqtt_queue, &energy, 0);
-    if (send_result == pdTRUE) {
-        return true;
-    }
-
-    ESP_LOGW(TAG, "queue full energy_to_mqtt");
-    return false;
 }
 
 void drainLatestSensor(SensorReading& latest_reading, bool& has_reading) {
@@ -143,51 +114,6 @@ void drainLatestSensor(SensorReading& latest_reading, bool& has_reading) {
     while (xQueueReceive(sensor_to_led_queue, &pending, 0) == pdTRUE) {
         latest_reading = pending;
         has_reading = true;
-    }
-}
-
-void drainStatusQueue() {
-    StatusMessage status = {};
-
-    while (xQueuePeek(status_to_mqtt_queue, &status, 0) == pdTRUE) {
-        esp_task_wdt_reset();
-
-        if (!MqttClient::publishStatus(status)) {
-            ESP_LOGW(TAG, "status publish failed, retained for retry");
-            break;
-        }
-
-        xQueueReceive(status_to_mqtt_queue, &status, 0);
-    }
-}
-
-void drainEnergyQueue() {
-    EnergyMessage energy = {};
-
-    while (xQueuePeek(energy_to_mqtt_queue, &energy, 0) == pdTRUE) {
-        esp_task_wdt_reset();
-
-        if (!MqttClient::publishEnergy(energy)) {
-            ESP_LOGW(TAG, "energy publish failed, retained for retry");
-            break;
-        }
-
-        xQueueReceive(energy_to_mqtt_queue, &energy, 0);
-    }
-}
-
-void drainAckQueue() {
-    AckMessage ack = {};
-
-    while (xQueuePeek(ack_to_mqtt_queue, &ack, 0) == pdTRUE) {
-        esp_task_wdt_reset();
-
-        if (!MqttClient::publishAck(ack)) {
-            ESP_LOGW(TAG, "ack publish failed, retained for retry");
-            break;
-        }
-
-        xQueueReceive(ack_to_mqtt_queue, &ack, 0);
     }
 }
 
@@ -215,8 +141,8 @@ void taskSensors(void* parameter) {
             continue;
         }
 
-        const bool sent_mqtt = sendSensorReading(sensor_to_mqtt_queue, reading, "sensor_to_mqtt");
-        const bool sent_led = sendSensorReading(sensor_to_led_queue, reading, "sensor_to_led");
+        const bool sent_mqtt = sendToQueue(sensor_to_mqtt_queue, reading, "sensor_to_mqtt");
+        const bool sent_led = sendToQueue(sensor_to_led_queue, reading, "sensor_to_led");
 
         if (!sent_mqtt || !sent_led) {
             continue;
@@ -246,13 +172,13 @@ void taskLed(void* parameter) {
 
         if (receive_result == pdTRUE) {
             const AckMessage ack = LedControl::applyCommand(command);
-            if (!sendAckMessage(ack)) {
+            if (!sendToQueue(ack_to_mqtt_queue, ack, "ack_to_mqtt")) {
                 ESP_LOGW(TAG, "ack enqueue failed");
             }
 
             const StatusMessage status =
                 LedControl::buildStatusMessage(WifiManager::getDegradedTier());
-            if (!sendStatusMessage(status)) {
+            if (!sendToQueue(status_to_mqtt_queue, status, "status_to_mqtt")) {
                 ESP_LOGW(TAG, "status enqueue failed");
             }
         }
@@ -265,7 +191,7 @@ void taskLed(void* parameter) {
             if (!areLedStatesEqual(previous_led, current_led)) {
                 const StatusMessage status =
                     LedControl::buildStatusMessage(WifiManager::getDegradedTier());
-                if (!sendStatusMessage(status)) {
+                if (!sendToQueue(status_to_mqtt_queue, status, "status_to_mqtt")) {
                     ESP_LOGW(TAG, "status enqueue failed");
                 }
             }
@@ -277,7 +203,7 @@ void taskLed(void* parameter) {
         const uint64_t now_ms = getNowMs();
         if (now_ms - last_energy_publish_ms >= ENERGY_PUBLISH_INTERVAL_MS) {
             const EnergyMessage energy = EnergyTracker::getSnapshot();
-            if (!sendEnergyMessage(energy)) {
+            if (!sendToQueue(energy_to_mqtt_queue, energy, "energy_to_mqtt")) {
                 ESP_LOGW(TAG, "energy enqueue failed");
             }
 
@@ -318,9 +244,9 @@ void taskMqtt(void* parameter) {
                 }
             }
 
-            drainStatusQueue();
-            drainEnergyQueue();
-            drainAckQueue();
+            drainPublishQueue(status_to_mqtt_queue, MqttClient::publishStatus, "status");
+            drainPublishQueue(energy_to_mqtt_queue, MqttClient::publishEnergy, "energy");
+            drainPublishQueue(ack_to_mqtt_queue, MqttClient::publishAck, "ack");
 
             const uint64_t now_ms = getNowMs();
             if (now_ms - last_heartbeat_ms >= MQTT_HEARTBEAT_INTERVAL_MS) {
