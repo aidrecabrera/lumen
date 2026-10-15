@@ -45,8 +45,8 @@ Important project files:
 - [Makefile](./Makefile)
 - [platformio.ini](./platformio.ini)
 - [include/lumen_board_config.h](./include/lumen_board_config.h)
-- [include/lumen_secrets.h](./include/lumen_secrets.h)
 - [src/lumen_main.cpp](./src/lumen_main.cpp)
+- [dashboard/](./dashboard/README.md)
 
 Jump to:
 
@@ -661,6 +661,13 @@ lumen/<device_id>/command/mode
 
 - telemetry / status / energy / ack / command payloads: **MsgPack**
 - availability payload: plain string `online` / `offline`
+- `status` also carries `thresholds`, `lux_ceiling`, `auto_state` (`active`, `night_off`, `paused_out_of_range`) and `cloud` (`connected`, `connecting`, `not_configured`, `invalid_config`)
+- `command/config` accepts an optional `lux_ceiling` (100 to 65535 lux)
+- one MsgPack fixture per message lives in [test/fixtures/contract](./test/fixtures/contract); the firmware and dashboard tests both decode them
+
+### Local WebSocket
+
+The node serves the dashboard at `http://lumen-xxyyzz.local` and one WebSocket at `/ws`, both behind digest auth (user `lumen`). Each binary frame is one MsgPack map `{ "t": "<topic suffix>", "p": <payload as bin> }` with the same suffixes and payloads as MQTT. Acks go back on the path their command came from.
 
 ---
 
@@ -671,10 +678,24 @@ Lumen is local-first. No cloud is required.
 A typical setup looks like this:
 
 ```text
-Lumen node <-> local Wi-Fi <-> local MQTT broker <-> local client/frontend
+At home:  browser <-> Wi-Fi (HTTP + WebSocket) <-> Lumen node
+Away:     browser <-> AWS IoT Core (WSS, Cognito login) <-> Lumen node (MQTT over TLS)
 ```
 
-That already makes it usable in places where public internet access is unreliable or unnecessary, as long as local power and local network infrastructure exist.
+The node needs no broker on the home network: it serves the local dashboard itself. The remote path is optional and starts only when `cloud.json` is on the node's filesystem.
+
+### First boot
+
+1. Flash the firmware: `make flash`.
+2. The node opens the open Wi-Fi network `Lumen-Setup-xxyyzz` for 10 minutes. Join it from a phone, then enter the Wi-Fi details and a local dashboard password (at least 8 characters).
+3. Upload the dashboard (and the cloud config, if any): `make fs-image && pio run -e lumen_esp32 --target uploadfs`.
+4. Open `http://lumen-xxyyzz.local` and sign in as `lumen`.
+
+Hold the BOOT button for 5 s after a restart to open the setup network again, for example after moving the node to another Wi-Fi network.
+
+### Remote path (AWS)
+
+`make setup DEVICE_ID=lumen-... BUDGET_EMAIL=you@example.com` deploys [infra/](./infra) with the AWS CDK, creates the device certificate, writes `provision/cloud.json` (gitignored) and uploads it with the dashboard. `make add-user EMAIL=...` creates a dashboard login. `make teardown` removes everything. If the AWS budget runs out, see [docs/remote-fallback.md](./docs/remote-fallback.md).
 
 ---
 
@@ -702,7 +723,7 @@ That already makes it usable in places where public internet access is unreliabl
 
 ### Configuration
 - [include/lumen_board_config.h](./include/lumen_board_config.h)
-- [include/lumen_secrets.h](./include/lumen_secrets.h)
+- [lumen_partitions.csv](./lumen_partitions.csv)
 
 ### Entry point
 - [src/lumen_main.cpp](./src/lumen_main.cpp)
@@ -716,6 +737,11 @@ That already makes it usable in places where public internet access is unreliabl
 - [src/lumen_task_manager.cpp](./src/lumen_task_manager.cpp)
 - [src/lumen_command_handler.cpp](./src/lumen_command_handler.cpp)
 - [src/lumen_config_manager.cpp](./src/lumen_config_manager.cpp)
+- [src/lumen_local_transport.cpp](./src/lumen_local_transport.cpp)
+- [src/lumen_setup_portal.cpp](./src/lumen_setup_portal.cpp)
+- [src/lumen_cloud_config.cpp](./src/lumen_cloud_config.cpp)
+- [src/lumen_wire.cpp](./src/lumen_wire.cpp)
+- [src/lumen_auto_control.cpp](./src/lumen_auto_control.cpp)
 
 ### Build / project files
 - [Makefile](./Makefile)

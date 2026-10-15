@@ -1,0 +1,22 @@
+{
+  "name": "lumen-infra",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "synth": "cdk synth",
+    "deploy": "cdk deploy --require-approval never",
+    "destroy": "cdk destroy --force"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "2.273.0",
+    "constructs": "10.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.5",
+    "aws-cdk": "2.1145.0",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2"
+  },
+  "type": "module"
+}
