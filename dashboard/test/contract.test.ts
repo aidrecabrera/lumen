@@ -2,9 +2,9 @@ import { decode } from "@msgpack/msgpack";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { decodeInbound } from "../src/core/contract";
-import { decodeFrame } from "../src/transport/frame";
-import * as fixtures from "../scripts/fixtures";
+import { decodeInbound } from "../src/core/contract.ts";
+import { decodeFrame } from "../src/transport/frame.ts";
+import * as fixtures from "../scripts/fixtures.ts";
 
 const dir = resolve(import.meta.dirname, "../../test/fixtures/contract");
 const read = (name: string) => new Uint8Array(readFileSync(resolve(dir, name)));

@@ -1,6 +1,6 @@
 import { encode } from "@msgpack/msgpack";
-import { encodeCommand, type Ack, type Command, type Energy, type Status, type Telemetry } from "../src/core/contract";
-import { encodeFrame } from "../src/transport/frame";
+import { encodeCommand, type Ack, type Command, type Energy, type Status, type Telemetry } from "../src/core/contract.ts";
+import { encodeFrame } from "../src/transport/frame.ts";
 
 // float fields use non-integer values: the firmware writes every float as float32, while an
 // integer-valued js number would encode as an int.
@@ -78,7 +78,7 @@ export const commands = {
 
 const telemetryBytes = encode(telemetry, f32);
 
-export const files: Record<string, Uint8Array> = {
+export const files = {
   "telemetry.msgpack": telemetryBytes,
   "status.msgpack": encode(statusWire, f32),
   "energy.msgpack": encode(energy, f32),
@@ -90,4 +90,4 @@ export const files: Record<string, Uint8Array> = {
   "command-mode.msgpack": encodeCommand(COMMAND_ID, commands.mode),
   "frame-telemetry.msgpack": encodeFrame("telemetry", telemetryBytes),
   "frame-command-mode.msgpack": encodeFrame("command/mode", encodeCommand(COMMAND_ID, commands.mode)),
-};
+} satisfies Record<string, Uint8Array>;

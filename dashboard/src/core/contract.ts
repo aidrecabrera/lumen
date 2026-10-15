@@ -1,9 +1,8 @@
 import { decode, encode } from "@msgpack/msgpack";
+import * as v from "valibot";
 
-// mirrors include/lumen_app_types.h and include/lumen_board_config.h; fixtures in
-// test/fixtures/contract keep both sides honest.
-
-export const TOPIC_ROOT = "lumen";
+// mirrors include/lumen_app_types.h and include/lumen_board_config.h; the fixtures in
+// test/fixtures/contract fail on whichever side drifts.
 
 export const TOPIC = {
   telemetry: "telemetry",
@@ -27,14 +26,12 @@ export const SUBSCRIBED_SUFFIXES = [
 
 export type CommandSuffix = typeof TOPIC.commandLed | typeof TOPIC.commandConfig | typeof TOPIC.commandMode;
 
-export type DeviceMode = "autonomous" | "manual";
-const DEVICE_MODES: readonly DeviceMode[] = ["autonomous", "manual"];
+export const LUX_CEILING_MIN = 100;
+export const LUX_CEILING_MAX = 65535;
 
-export type DegradedTier = "none" | "wifi_retrying" | "wifi_retry_limit";
-const DEGRADED_TIERS: readonly DegradedTier[] = ["none", "wifi_retrying", "wifi_retry_limit"];
-
-export type AckResult = "applied" | "rejected" | "deferred";
-const ACK_RESULTS: readonly AckResult[] = ["applied", "rejected", "deferred"];
+const DEVICE_MODES = ["autonomous", "manual"] as const;
+const DEGRADED_TIERS = ["none", "wifi_retrying", "wifi_retry_limit"] as const;
+const ACK_RESULTS = ["applied", "rejected", "deferred"] as const;
 
 export const ACK_REASONS = [
   "mode applied",
@@ -46,71 +43,100 @@ export const ACK_REASONS = [
   "invalid payload",
   "command queue full",
 ] as const;
-export type AckReason = (typeof ACK_REASONS)[number];
 
 export const AUTO_STATES = ["active", "night_off", "paused_out_of_range"] as const;
+export const CLOUD_STATES = ["connected", "connecting", "not_configured", "invalid_config"] as const;
+
+// the firmware sends these enums as their index.
+function indexOf<const T extends readonly string[]>(names: T): v.GenericSchema<number, T[number]> {
+  return v.pipe(
+    v.number(),
+    v.integer(),
+    v.minValue(0),
+    v.maxValue(names.length - 1),
+    // SAFETY: the integer and range checks above keep index inside names.
+    v.transform((index) => names[index] as T[number]),
+  );
+}
+
+const finite = v.pipe(v.number(), v.finite());
+const percent = v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(100));
+const count = v.pipe(v.number(), v.integer(), v.minValue(0));
+
+const LedStateSchema = v.object({
+  power: v.boolean(),
+  brightness_pct: percent,
+  red_enabled: v.boolean(),
+  blue_enabled: v.boolean(),
+  far_red_enabled: v.boolean(),
+  red_dist_pct: percent,
+  blue_dist_pct: percent,
+  far_red_dist_pct: percent,
+});
+
+const ThresholdsSchema = v.object({
+  temp_min_c: finite,
+  temp_max_c: finite,
+  humidity_min_pct: finite,
+  humidity_max_pct: finite,
+});
+
+const TelemetrySchema = v.object({
+  timestamp_ms: count,
+  light_lux: finite,
+  temperature_c: finite,
+  humidity_pct: finite,
+  sequence: count,
+});
+
+const StatusSchema = v.object({
+  timestamp_ms: count,
+  mode: indexOf(DEVICE_MODES),
+  degraded_tier: indexOf(DEGRADED_TIERS),
+  uptime_sec: count,
+  led: LedStateSchema,
+  auto_state: v.picklist(AUTO_STATES),
+  cloud: v.picklist(CLOUD_STATES),
+  thresholds: ThresholdsSchema,
+  lux_ceiling: finite,
+});
+
+const EnergySchema = v.object({
+  timestamp_ms: count,
+  total_wh: finite,
+  session_wh: finite,
+  light_on_sec: count,
+  max_brightness_sec: count,
+});
+
+const AckSchema = v.object({
+  command_id: v.string(),
+  result: indexOf(ACK_RESULTS),
+  timestamp_ms: count,
+  mode: indexOf(DEVICE_MODES),
+  reason: v.picklist(ACK_REASONS),
+  led: LedStateSchema,
+});
+
+export type DeviceMode = (typeof DEVICE_MODES)[number];
+
+export type AckReason = (typeof ACK_REASONS)[number];
+
 export type AutoState = (typeof AUTO_STATES)[number];
 
-export const CLOUD_STATES = ["connected", "connecting", "not_configured", "invalid_config"] as const;
 export type CloudState = (typeof CLOUD_STATES)[number];
 
-export const LUX_CEILING_MIN = 100;
-export const LUX_CEILING_MAX = 65535;
+export type LedState = v.InferOutput<typeof LedStateSchema>;
 
-export interface LedState {
-  power: boolean;
-  brightness_pct: number;
-  red_enabled: boolean;
-  blue_enabled: boolean;
-  far_red_enabled: boolean;
-  red_dist_pct: number;
-  blue_dist_pct: number;
-  far_red_dist_pct: number;
-}
+export type Thresholds = v.InferOutput<typeof ThresholdsSchema>;
 
-export interface Thresholds {
-  temp_min_c: number;
-  temp_max_c: number;
-  humidity_min_pct: number;
-  humidity_max_pct: number;
-}
+export type Telemetry = v.InferOutput<typeof TelemetrySchema>;
 
-export interface Telemetry {
-  timestamp_ms: number;
-  light_lux: number;
-  temperature_c: number;
-  humidity_pct: number;
-  sequence: number;
-}
+export type Status = v.InferOutput<typeof StatusSchema>;
 
-export interface Status {
-  timestamp_ms: number;
-  mode: DeviceMode;
-  degraded_tier: DegradedTier;
-  uptime_sec: number;
-  led: LedState;
-  auto_state: AutoState;
-  cloud: CloudState;
-  thresholds: Thresholds;
-  lux_ceiling: number;
-}
+export type Energy = v.InferOutput<typeof EnergySchema>;
 
-export interface Energy {
-  timestamp_ms: number;
-  total_wh: number;
-  session_wh: number;
-  light_on_sec: number;
-  max_brightness_sec: number;
-}
-
-export interface Ack {
-  command_id: string;
-  result: AckResult;
-  timestamp_ms: number;
-  mode: DeviceMode;
-  reason: AckReason;
-  led: LedState;
-}
+export type Ack = v.InferOutput<typeof AckSchema>;
 
 export type Inbound =
   | { kind: "telemetry"; value: Telemetry }
@@ -126,164 +152,57 @@ export type Command =
 
 export type DecodeResult = { ok: true; message: Inbound } | { ok: false; error: string };
 
-class ContractError extends Error {}
+export function decodeInbound(suffix: string, payload: Uint8Array): DecodeResult {
+  if (suffix === TOPIC.availability) return decodeAvailability(payload);
 
-type Fields = Record<string, unknown>;
+  if (suffix === TOPIC.telemetry) return decodeWith(TelemetrySchema, payload, (value) => ({ kind: "telemetry", value }));
 
-function asMap(value: unknown, what: string): Fields {
-  if (typeof value !== "object" || value === null || Array.isArray(value) || value instanceof Uint8Array) {
-    throw new ContractError(`${what}: expected a map`);
+  if (suffix === TOPIC.status) return decodeWith(StatusSchema, payload, (value) => ({ kind: "status", value }));
+
+  if (suffix === TOPIC.energy) return decodeWith(EnergySchema, payload, (value) => ({ kind: "energy", value }));
+
+  if (suffix.startsWith(ACK_PREFIX)) {
+    const commandId = suffix.slice(ACK_PREFIX.length);
+
+    const ackFor = v.pipe(
+      AckSchema,
+      v.check((ack) => ack.command_id === commandId, "ack topic does not match command_id"),
+    );
+
+    return decodeWith(ackFor, payload, (value) => ({ kind: "ack", value }));
   }
-  return value as Fields;
+
+  return { ok: false, error: `unknown suffix "${suffix}"` };
 }
 
-function num(fields: Fields, key: string): number {
-  const value = fields[key];
-  if (typeof value === "bigint") return Number(value);
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw new ContractError(`${key}: expected a finite number`);
-  }
-  return value;
+function decodeAvailability(payload: Uint8Array): DecodeResult {
+  const text = new TextDecoder().decode(payload);
+
+  if (text === "online") return { ok: true, message: { kind: "availability", online: true } };
+
+  if (text === "offline") return { ok: true, message: { kind: "availability", online: false } };
+
+  return { ok: false, error: `unknown availability "${text}"` };
 }
 
-function uint(fields: Fields, key: string, max: number): number {
-  const value = num(fields, key);
-  if (!Number.isInteger(value) || value < 0 || value > max) {
-    throw new ContractError(`${key}: expected an integer 0..${max}`);
-  }
-  return value;
+function decodeWith<T>(
+  schema: v.GenericSchema<unknown, T>,
+  payload: Uint8Array,
+  toMessage: (value: T) => Inbound,
+): DecodeResult {
+  const result = v.safeParse(schema, decodeOrUndefined(payload));
+
+  if (!result.success) return { ok: false, error: v.summarize(result.issues) };
+
+  return { ok: true, message: toMessage(result.output) };
 }
 
-function bool(fields: Fields, key: string): boolean {
-  const value = fields[key];
-  if (typeof value !== "boolean") throw new ContractError(`${key}: expected a boolean`);
-  return value;
-}
-
-function str(fields: Fields, key: string): string {
-  const value = fields[key];
-  if (typeof value !== "string") throw new ContractError(`${key}: expected a string`);
-  return value;
-}
-
-function oneOf<T extends string>(fields: Fields, key: string, allowed: readonly T[]): T {
-  const value = str(fields, key);
-  const found = allowed.find((item) => item === value);
-  if (found === undefined) throw new ContractError(`${key}: unknown value "${value}"`);
-  return found;
-}
-
-function indexed<T>(fields: Fields, key: string, allowed: readonly T[]): T {
-  const found = allowed[uint(fields, key, 255)];
-  if (found === undefined) throw new ContractError(`${key}: unknown value`);
-  return found;
-}
-
-function readLed(value: unknown): LedState {
-  const fields = asMap(value, "led");
-  return {
-    power: bool(fields, "power"),
-    brightness_pct: uint(fields, "brightness_pct", 100),
-    red_enabled: bool(fields, "red_enabled"),
-    blue_enabled: bool(fields, "blue_enabled"),
-    far_red_enabled: bool(fields, "far_red_enabled"),
-    red_dist_pct: uint(fields, "red_dist_pct", 100),
-    blue_dist_pct: uint(fields, "blue_dist_pct", 100),
-    far_red_dist_pct: uint(fields, "far_red_dist_pct", 100),
-  };
-}
-
-function readThresholds(value: unknown): Thresholds {
-  const fields = asMap(value, "thresholds");
-  return {
-    temp_min_c: num(fields, "temp_min_c"),
-    temp_max_c: num(fields, "temp_max_c"),
-    humidity_min_pct: num(fields, "humidity_min_pct"),
-    humidity_max_pct: num(fields, "humidity_max_pct"),
-  };
-}
-
-export function readTelemetry(value: unknown): Telemetry {
-  const fields = asMap(value, "telemetry");
-  return {
-    timestamp_ms: num(fields, "timestamp_ms"),
-    light_lux: num(fields, "light_lux"),
-    temperature_c: num(fields, "temperature_c"),
-    humidity_pct: num(fields, "humidity_pct"),
-    sequence: uint(fields, "sequence", 0xffffffff),
-  };
-}
-
-export function readStatus(value: unknown): Status {
-  const fields = asMap(value, "status");
-  return {
-    timestamp_ms: num(fields, "timestamp_ms"),
-    mode: indexed(fields, "mode", DEVICE_MODES),
-    degraded_tier: indexed(fields, "degraded_tier", DEGRADED_TIERS),
-    uptime_sec: num(fields, "uptime_sec"),
-    led: readLed(fields["led"]),
-    auto_state: oneOf(fields, "auto_state", AUTO_STATES),
-    cloud: oneOf(fields, "cloud", CLOUD_STATES),
-    thresholds: readThresholds(fields["thresholds"]),
-    lux_ceiling: num(fields, "lux_ceiling"),
-  };
-}
-
-export function readEnergy(value: unknown): Energy {
-  const fields = asMap(value, "energy");
-  return {
-    timestamp_ms: num(fields, "timestamp_ms"),
-    total_wh: num(fields, "total_wh"),
-    session_wh: num(fields, "session_wh"),
-    light_on_sec: num(fields, "light_on_sec"),
-    max_brightness_sec: num(fields, "max_brightness_sec"),
-  };
-}
-
-export function readAck(value: unknown): Ack {
-  const fields = asMap(value, "ack");
-  return {
-    command_id: str(fields, "command_id"),
-    result: indexed(fields, "result", ACK_RESULTS),
-    timestamp_ms: num(fields, "timestamp_ms"),
-    mode: indexed(fields, "mode", DEVICE_MODES),
-    reason: oneOf(fields, "reason", ACK_REASONS),
-    led: readLed(fields["led"]),
-  };
-}
-
-function decodeMsgPack(payload: Uint8Array): unknown {
+function decodeOrUndefined(payload: Uint8Array): ReturnType<typeof decode> {
   try {
     return decode(payload);
-  } catch (error) {
-    throw new ContractError(`bad msgpack: ${String(error)}`);
+  } catch {
+    return undefined;
   }
-}
-
-export function decodeInbound(suffix: string, payload: Uint8Array): DecodeResult {
-  try {
-    return { ok: true, message: decodeInboundOrThrow(suffix, payload) };
-  } catch (error) {
-    if (error instanceof ContractError) return { ok: false, error: `${suffix}: ${error.message}` };
-    throw error;
-  }
-}
-
-function decodeInboundOrThrow(suffix: string, payload: Uint8Array): Inbound {
-  if (suffix === TOPIC.availability) {
-    const text = new TextDecoder().decode(payload);
-    if (text !== "online" && text !== "offline") throw new ContractError(`unknown availability "${text}"`);
-    return { kind: "availability", online: text === "online" };
-  }
-  if (suffix === TOPIC.telemetry) return { kind: "telemetry", value: readTelemetry(decodeMsgPack(payload)) };
-  if (suffix === TOPIC.status) return { kind: "status", value: readStatus(decodeMsgPack(payload)) };
-  if (suffix === TOPIC.energy) return { kind: "energy", value: readEnergy(decodeMsgPack(payload)) };
-  if (suffix.startsWith(ACK_PREFIX)) {
-    const ack = readAck(decodeMsgPack(payload));
-    if (suffix !== `${ACK_PREFIX}${ack.command_id}`) throw new ContractError("ack topic does not match command_id");
-    return { kind: "ack", value: ack };
-  }
-  throw new ContractError("unknown suffix");
 }
 
 export function commandSuffix(command: Command): CommandSuffix {
@@ -308,15 +227,43 @@ export function encodeCommand(commandId: string, command: Command): Uint8Array {
   }
 }
 
-export function sharesTotal(led: Pick<LedState, "red_dist_pct" | "blue_dist_pct" | "far_red_dist_pct">): number {
-  return led.red_dist_pct + led.blue_dist_pct + led.far_red_dist_pct;
+const commandId = { command_id: v.string() };
+
+const COMMAND_SCHEMAS = {
+  [TOPIC.commandLed]: v.pipe(
+    v.object({ ...commandId, ...LedStateSchema.entries }),
+    v.transform(({ command_id, ...led }) => ({ commandId: command_id, command: { kind: "led", led } as const })),
+  ),
+  [TOPIC.commandConfig]: v.pipe(
+    v.object({ ...commandId, thresholds: ThresholdsSchema, lux_ceiling: finite }),
+    v.transform(({ command_id, thresholds, lux_ceiling }) => ({
+      commandId: command_id,
+      command: { kind: "config", thresholds, lux_ceiling } as const,
+    })),
+  ),
+  [TOPIC.commandMode]: v.pipe(
+    v.object({ ...commandId, mode: indexOf(DEVICE_MODES) }),
+    v.transform(({ command_id, mode }) => ({ commandId: command_id, command: { kind: "mode", mode } as const })),
+  ),
+};
+
+export interface AddressedCommand {
+  commandId: string;
+  command: Command;
+}
+
+export function decodeCommand(suffix: CommandSuffix, payload: Uint8Array): AddressedCommand | undefined {
+  const result = v.safeParse(COMMAND_SCHEMAS[suffix], decodeOrUndefined(payload));
+
+  return result.success ? result.output : undefined;
 }
 
 export function topicFor(deviceId: string, suffix: string): string {
-  return `${TOPIC_ROOT}/${deviceId}/${suffix}`;
+  return `lumen/${deviceId}/${suffix}`;
 }
 
 export function suffixFor(deviceId: string, topic: string): string | undefined {
-  const prefix = `${TOPIC_ROOT}/${deviceId}/`;
+  const prefix = topicFor(deviceId, "");
+
   return topic.startsWith(prefix) ? topic.slice(prefix.length) : undefined;
 }
