@@ -6,12 +6,28 @@ import { newCommandId } from "../core/commands.ts";
 import type { Link, MessageHandler, Transport } from "./transport.ts";
 
 export interface AwsIotSettings {
-  endpoint: string;
-  region: string;
   deviceId: string;
   // the browser iot policy allows client ids of the form <identity id>-*.
   identityId: string;
-  credentials: auth.CredentialsProvider;
+  clientConfig(clientId: string): mqtt5.Mqtt5ClientConfig;
+  // rejects once the login can no longer be refreshed.
+  refreshCredentials(): Promise<void>;
+}
+
+export function sigv4ClientConfig(
+  endpoint: string,
+  region: string,
+  credentials: auth.CredentialsProvider,
+  clientId: string,
+): mqtt5.Mqtt5ClientConfig {
+  const builder = iot.AwsIotMqtt5ClientConfigBuilder.newWebsocketMqttBuilderWithSigv4Auth(endpoint, {
+    credentialsProvider: credentials,
+    region,
+  });
+
+  builder.withConnectProperties({ clientId, keepAliveIntervalSeconds: 60 });
+
+  return builder.build();
 }
 
 export class AwsTransport implements Transport {
@@ -26,34 +42,31 @@ export class AwsTransport implements Transport {
   }
 
   async connect(): Promise<void> {
-    const { endpoint, region, identityId, credentials } = this.#settings;
+    const { identityId, clientConfig, refreshCredentials } = this.#settings;
 
-    await credentials.refreshCredentials();
+    await refreshCredentials();
 
-    const builder = iot.AwsIotMqtt5ClientConfigBuilder.newWebsocketMqttBuilderWithSigv4Auth(endpoint, {
-      credentialsProvider: credentials,
-      region,
-    });
+    const client = new mqtt5.Mqtt5Client(clientConfig(`${identityId}-${newCommandId()}`));
 
-    builder.withConnectProperties({ clientId: `${identityId}-${newCommandId()}`, keepAliveIntervalSeconds: 60 });
-
-    const client = new mqtt5.Mqtt5Client(builder.build());
-
+    // settles once subscribed, so a caller never sends before the node topics are live
     const settled = new Promise<void>((resolve) => {
-      client.once("connectionSuccess", () => resolve());
-      client.once("connectionFailure", () => resolve());
+      this.onConnectionChange((link) => {
+        if (link.kind !== "connecting") resolve();
+      });
     });
 
     this.#client = client;
     this.#emitLink({ kind: "connecting" });
 
-    client.on("connectionSuccess", () => void this.#subscribe(client));
+    client.on("connectionSuccess", () => {
+      this.#subscribe(client).catch(() => this.#emitLink({ kind: "reconnecting" }));
+    });
     client.on("connectionFailure", () => this.#emitLink({ kind: "reconnecting" }));
     // iot core closes websocket connections after 24 h; the client reconnects with fresh credentials.
     client.on("disconnection", () => {
       this.#connected = false;
       this.#emitLink({ kind: "reconnecting" });
-      credentials.refreshCredentials().catch(() => {
+      refreshCredentials().catch(() => {
         client.stop();
         this.#emitLink({ kind: "session_expired" });
       });
@@ -83,7 +96,10 @@ export class AwsTransport implements Transport {
 
     if (client === undefined || !this.#connected) throw new Error("not connected to aws iot");
 
-    void client.publish({ topicName: topicFor(this.#settings.deviceId, suffix), payload, qos: mqtt5.QoS.AtLeastOnce });
+    // the sdk sends a Uint8Array's whole backing buffer and ignores the view bounds, so hand it exact bytes
+    const exact = payload.slice().buffer;
+
+    void client.publish({ topicName: topicFor(this.#settings.deviceId, suffix), payload: exact, qos: mqtt5.QoS.AtLeastOnce });
   }
 
   // a retained message reaches only exact-topic subscriptions on aws iot, so no wildcard here.
@@ -102,9 +118,12 @@ export class AwsTransport implements Transport {
     const suffix = suffixFor(this.#settings.deviceId, message.topicName);
     const payload = message.payload;
 
-    if (suffix === undefined || !(payload instanceof ArrayBuffer)) return;
+    // the sdk decodes payloads as Buffer views over the received frame
+    if (suffix === undefined || !ArrayBuffer.isView(payload)) return;
 
-    for (const handler of this.#messageHandlers) handler(suffix, new Uint8Array(payload), message.retain ?? false);
+    const bytes = new Uint8Array(payload.buffer, payload.byteOffset, payload.byteLength);
+
+    for (const handler of this.#messageHandlers) handler(suffix, bytes, message.retain ?? false);
   }
 
   #emitLink(link: Link): void {

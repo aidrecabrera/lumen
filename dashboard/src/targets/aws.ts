@@ -8,7 +8,7 @@ import { auth } from "aws-iot-device-sdk-v2/dist/browser";
 import { nothing } from "lit-html";
 import * as v from "valibot";
 
-import { AwsTransport } from "../transport/aws.ts";
+import { AwsTransport, sigv4ClientConfig } from "../transport/aws.ts";
 import { BROKER_STALE_AFTER_MS } from "./env.ts";
 import type { Target } from "./types.ts";
 
@@ -84,13 +84,14 @@ export async function createTarget(): Promise<Target> {
 
   await attachDashboardPolicy(config, session);
 
+  const credentials = new AmplifyCredentials(config.region, session);
+
   return {
     transport: new AwsTransport({
-      endpoint: config.iotEndpoint,
-      region: config.region,
       deviceId: config.deviceId,
       identityId: session.identityId,
-      credentials: new AmplifyCredentials(config.region, session),
+      clientConfig: (clientId) => sigv4ClientConfig(config.iotEndpoint, config.region, credentials, clientId),
+      refreshCredentials: () => credentials.refreshCredentials(),
     }),
     staleAfterMs: BROKER_STALE_AFTER_MS,
     extras: () => nothing,
