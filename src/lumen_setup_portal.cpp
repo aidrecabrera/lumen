@@ -5,8 +5,11 @@
 #include <WiFi.h>
 #include <WiFiManager.h>
 #include <esp_log.h>
+#include <esp_system.h>
 #include <esp_task_wdt.h>
 #include <stdio.h>
+
+#include <optional>
 
 #include "lumen_board_config.h"
 #include "lumen_config_manager.h"
@@ -16,19 +19,7 @@
 namespace {
 static const char* TAG = "setup_portal";
 
-bool bootButtonHeld() {
-    pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
-    const uint64_t pressed_at_ms = getNowMs();
-    while (digitalRead(BOOT_BUTTON_PIN) == LOW) {
-        esp_task_wdt_reset();
-        if (getNowMs() - pressed_at_ms >= SETUP_BUTTON_HOLD_MS) {
-            return true;
-        }
-        delay(50);
-    }
-
-    return false;
-}
+std::optional<uint64_t> button_pressed_since_ms;
 
 bool isNeeded() {
     if (!ConfigManager::loadWifiCredentials() || !ConfigManager::loadLocalPasswordHash()) {
@@ -41,7 +32,7 @@ bool isNeeded() {
         return true;
     }
 
-    return bootButtonHeld();
+    return false;
 }
 
 void saveSetup(const char* local_password) {
@@ -116,8 +107,31 @@ void runPortal() {
 
 namespace SetupPortal {
 void runIfNeeded() {
+    pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
     if (isNeeded()) {
         runPortal();
     }
+}
+
+void watchButton(uint64_t now_ms) {
+    if (digitalRead(BOOT_BUTTON_PIN) == HIGH) {
+        button_pressed_since_ms.reset();
+        return;
+    }
+
+    if (!button_pressed_since_ms) {
+        button_pressed_since_ms = now_ms;
+        return;
+    }
+
+    if (now_ms - *button_pressed_since_ms < SETUP_BUTTON_HOLD_MS) {
+        return;
+    }
+
+    // the saved wifi then counts as never connected, so the next boot opens the portal;
+    // if the portal times out, the next good connection sets the flag again.
+    ESP_LOGI(TAG, "boot held, restarting into the setup portal");
+    ConfigManager::forgetWifiConnected();
+    esp_restart();
 }
 }  // namespace SetupPortal

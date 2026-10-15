@@ -19,5 +19,6 @@ std::optional<ValidWifiCredentials> loadWifiCredentials();
 std::optional<LocalPasswordHash> loadLocalPasswordHash();
 bool wifiHasConnected();
 void markWifiConnected();
+void forgetWifiConnected();
 
 }  // namespace ConfigManager

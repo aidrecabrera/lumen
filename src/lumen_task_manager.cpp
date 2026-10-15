@@ -131,11 +131,16 @@ class CloudPublisher {
             ack_to_cloud_queue.receive(ack, 0);
         }
 
+        // take before publishing: a peek then receive could remove a newer overwrite.
+        // on failure the item goes back unless a newer one already took the slot.
         SensorReading reading = {};
         if (isDue(last_telemetry_ms_, CLOUD_TELEMETRY_INTERVAL_MS, now_ms) &&
-            telemetry_to_cloud_queue.peek(reading, 0) && MqttClient::publishTelemetry(reading)) {
-            telemetry_to_cloud_queue.receive(reading, 0);
-            last_telemetry_ms_ = now_ms;
+            telemetry_to_cloud_queue.receive(reading, 0)) {
+            if (MqttClient::publishTelemetry(reading)) {
+                last_telemetry_ms_ = now_ms;
+            } else {
+                telemetry_to_cloud_queue.send(reading, 0);
+            }
         }
 
         const bool status_wanted = cloud_status_wanted.exchange(false);
@@ -149,9 +154,12 @@ class CloudPublisher {
 
         EnergyMessage energy = {};
         if (isDue(last_energy_ms_, CLOUD_ENERGY_INTERVAL_MS, now_ms) &&
-            energy_to_cloud_queue.peek(energy, 0) && MqttClient::publishEnergy(energy)) {
-            energy_to_cloud_queue.receive(energy, 0);
-            last_energy_ms_ = now_ms;
+            energy_to_cloud_queue.receive(energy, 0)) {
+            if (MqttClient::publishEnergy(energy)) {
+                last_energy_ms_ = now_ms;
+            } else {
+                energy_to_cloud_queue.send(energy, 0);
+            }
         }
     }
 

@@ -229,6 +229,10 @@ bool commitRuntimeConfigLocked(const RuntimeConfig& next) {
     }
 
     if (!writeRuntimeConfigBlob(next)) {
+        // ram keeps the old ceiling, so nvs must too or a rejected value returns after reboot
+        if (lux_changed) {
+            writeLuxCeiling(runtime_config.lux_ceiling);
+        }
         return false;
     }
 
@@ -398,6 +402,14 @@ void markWifiConnected() {
     lockConfig();
     if (has_nvs && !preferences.getBool(KEY_WIFI_CONNECTED, false)) {
         preferences.putBool(KEY_WIFI_CONNECTED, true);
+    }
+    unlockConfig();
+}
+
+void forgetWifiConnected() {
+    lockConfig();
+    if (has_nvs) {
+        preferences.putBool(KEY_WIFI_CONNECTED, false);
     }
     unlockConfig();
 }

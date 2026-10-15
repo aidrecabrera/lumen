@@ -17,6 +17,7 @@
 #include "lumen_mqtt_client.h"
 #include "lumen_sensor_manager.h"
 #include "lumen_setup_portal.h"
+#include "lumen_system_utils.h"
 #include "lumen_task_manager.h"
 #include "lumen_wifi_manager.h"
 
@@ -179,6 +180,7 @@ void setup() {
 
 void loop() {
     esp_task_wdt_reset();
+    SetupPortal::watchButton(getNowMs());
     vTaskDelay(pdMS_TO_TICKS(1000));
 }
 #endif
