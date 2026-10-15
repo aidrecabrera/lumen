@@ -59,8 +59,13 @@ class AmplifyCredentials extends auth.CredentialsProvider {
     };
   }
 
+  // rejects once cognito can no longer refresh the login, so the transport can ask for a new one.
   override async refreshCredentials(): Promise<void> {
-    this.#session = await currentSession();
+    const session = await currentSession();
+
+    if (session === undefined) throw new Error("session expired");
+
+    this.#session = session;
   }
 }
 

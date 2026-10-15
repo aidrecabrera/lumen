@@ -52,8 +52,11 @@ export class AwsTransport implements Transport {
     // iot core closes websocket connections after 24 h; the client reconnects with fresh credentials.
     client.on("disconnection", () => {
       this.#connected = false;
-      void credentials.refreshCredentials();
       this.#emitLink({ kind: "reconnecting" });
+      credentials.refreshCredentials().catch(() => {
+        client.stop();
+        this.#emitLink({ kind: "session_expired" });
+      });
     });
     client.on("messageReceived", ({ message }) => this.#receive(message));
     client.start();
