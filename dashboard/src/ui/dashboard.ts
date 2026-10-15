@@ -72,7 +72,9 @@ export class Dashboard {
 
     this.#apply({ type: "message", message: decoded.message, retained, at: Date.now() });
 
-    if (decoded.message.kind === "ack") this.#sender.receiveAck(decoded.message.value);
+    if (decoded.message.kind === "ack") {
+      this.#sender.receiveAck(decoded.message.value);
+    }
   }
 
   #apply(event: DashboardEvent): void {
@@ -94,7 +96,9 @@ export class Dashboard {
   #led(): LedState {
     const status = this.#status();
 
-    if (status === undefined) throw new Error("led controls are disabled until the first status");
+    if (status === undefined) {
+      throw new Error("led controls are disabled until the first status");
+    }
 
     return status.led;
   }
@@ -151,7 +155,9 @@ export class Dashboard {
   async #commitShares(): Promise<void> {
     const draft = this.#shareDraft;
 
-    if (draft === undefined) return;
+    if (draft === undefined) {
+      return;
+    }
 
     const others = CHANNELS.filter((channel) => channel !== draft.moved);
 
@@ -172,14 +178,18 @@ export class Dashboard {
   }
 
   #editSettings(field: SettingsField, value: string): void {
-    if (this.#settings === undefined) return;
+    if (this.#settings === undefined) {
+      return;
+    }
 
     this.#settings = { form: { ...this.#settings.form, [field]: value }, dirty: true };
     this.#render();
   }
 
   async #saveSettings(): Promise<void> {
-    if (this.#settings === undefined) return;
+    if (this.#settings === undefined) {
+      return;
+    }
 
     const parsed = parseSettings(this.#settings.form);
 

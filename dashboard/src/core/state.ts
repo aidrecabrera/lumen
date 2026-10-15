@@ -43,7 +43,9 @@ export const initialState: DashboardState = {
 };
 
 export function reduce(state: DashboardState, event: DashboardEvent): DashboardState {
-  if (event.type === "link") return { ...state, link: event.link };
+  if (event.type === "link") {
+    return { ...state, link: event.link };
+  }
 
   const { message, retained, at } = event;
   const seen = retained ? state : { ...state, lastMessageAt: at };
@@ -62,7 +64,9 @@ export function reduce(state: DashboardState, event: DashboardEvent): DashboardS
     case "energy":
       return { ...seen, energy: known(message.value, retained, at) };
     case "ack":
-      if (seen.status.kind === "none") return seen;
+      if (seen.status.kind === "none") {
+        return seen;
+      }
 
       return {
         ...seen,
@@ -77,7 +81,9 @@ function known<T>(value: T, retained: boolean, at: number): Known<T> {
 
 // a retained "offline" has no timestamp, so the tab cannot know when the node went down.
 function availabilityFrom(online: boolean, retained: boolean, at: number): Availability {
-  if (online) return { kind: "online" };
+  if (online) {
+    return { kind: "online" };
+  }
 
   return retained ? { kind: "offline_before_page" } : { kind: "offline", since: at };
 }
@@ -116,9 +122,13 @@ export function describeConnection(state: DashboardState, now: number, staleAfte
     return { tone: "offline", text: "Node offline (last seen before this page opened)" };
   }
 
-  if (state.lastMessageAt === undefined) return { tone: "busy", text: "Waiting for the node…" };
+  if (state.lastMessageAt === undefined) {
+    return { tone: "busy", text: "Waiting for the node…" };
+  }
 
-  if (now - state.lastMessageAt > staleAfterMs) return { tone: "offline", text: "Node not responding" };
+  if (now - state.lastMessageAt > staleAfterMs) {
+    return { tone: "offline", text: "Node not responding" };
+  }
 
   return { tone: "live", text: "Live" };
 }
@@ -134,10 +144,15 @@ export function clockTime(at: number): string {
 export function ageText(at: number, now: number): string {
   const seconds = Math.max(0, Math.round((now - at) / 1000));
 
-  if (seconds < 60) return `Updated ${seconds} s ago`;
+  if (seconds < 60) {
+    return `Updated ${seconds} s ago`;
+  }
+
   const minutes = Math.round(seconds / 60);
 
-  if (minutes < 60) return `Updated ${minutes} min ago`;
+  if (minutes < 60) {
+    return `Updated ${minutes} min ago`;
+  }
 
   return `Updated at ${clockTime(at)}`;
 }

@@ -22,7 +22,9 @@ interface Received {
 
 // mqtt requires a packet id on subscribe and on qos 1 publish; mqtt-packet types it as optional
 function packetId(id: number | undefined): number {
-  if (id === undefined) throw new Error("packet without an id");
+  if (id === undefined) {
+    throw new Error("packet without an id");
+  }
 
   return id;
 }
@@ -58,14 +60,18 @@ describeTransportContract("aws", async () => {
       for (const topic of topics) {
         const payload = retained.get(topic);
 
-        if (payload !== undefined) deliver(socket, topic, payload, true);
+        if (payload !== undefined) {
+          deliver(socket, topic, payload, true);
+        }
       }
 
       return;
     }
 
     if (packet.cmd === "publish") {
-      if (packet.qos > 0) send(socket, { cmd: "puback", messageId: packetId(packet.messageId), reasonCode: REASON_SUCCESS });
+      if (packet.qos > 0) {
+        send(socket, { cmd: "puback", messageId: packetId(packet.messageId), reasonCode: REASON_SUCCESS });
+      }
 
       const payload = new Uint8Array(Buffer.from(packet.payload));
 
@@ -74,7 +80,9 @@ describeTransportContract("aws", async () => {
       return;
     }
 
-    if (packet.cmd === "pingreq") send(socket, { cmd: "pingresp" });
+    if (packet.cmd === "pingreq") {
+      send(socket, { cmd: "pingresp" });
+    }
   }
 
   await once(server, "listening");
@@ -105,10 +113,14 @@ describeTransportContract("aws", async () => {
       publish: async (suffix, payload, retain) => {
         const topic = `${TOPIC_PREFIX}${suffix}`;
 
-        if (retain) retained.set(topic, payload);
+        if (retain) {
+          retained.set(topic, payload);
+        }
 
         for (const [socket, topics] of subscribers) {
-          if (topics.has(topic)) deliver(socket, topic, payload, false);
+          if (topics.has(topic)) {
+            deliver(socket, topic, payload, false);
+          }
         }
       },
       received: () => new Promise((resolve) => waiting.push(resolve)),

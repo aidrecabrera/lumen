@@ -18,7 +18,9 @@ describeTransportContract("local", async () => {
   server.on("connection", (client) => {
     clients.add(client);
 
-    for (const [suffix, payload] of latest) client.send(encodeFrame(suffix, payload));
+    for (const [suffix, payload] of latest) {
+      client.send(encodeFrame(suffix, payload));
+    }
   });
 
   // SAFETY: a ws server listening on a port reports an AddressInfo, not a pipe name.
@@ -28,19 +30,27 @@ describeTransportContract("local", async () => {
     transport: new LocalTransport(`ws://127.0.0.1:${port}/ws`),
     node: {
       publish: async (suffix, payload, retained) => {
-        if (retained) latest.set(suffix, payload);
+        if (retained) {
+          latest.set(suffix, payload);
+        }
 
-        for (const client of clients) client.send(encodeFrame(suffix, payload));
+        for (const client of clients) {
+          client.send(encodeFrame(suffix, payload));
+        }
       },
       received: async () => {
         const [client] = clients;
 
-        if (client === undefined) throw new Error("no client connected");
+        if (client === undefined) {
+          throw new Error("no client connected");
+        }
 
         const [data] = await once(client, "message");
         const frame = decodeFrame(new Uint8Array(data));
 
-        if (frame === undefined) throw new Error("client sent an invalid frame");
+        if (frame === undefined) {
+          throw new Error("client sent an invalid frame");
+        }
 
         return { suffix: frame.t, payload: frame.p };
       },

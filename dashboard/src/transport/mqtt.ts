@@ -38,7 +38,9 @@ export class MqttTransport implements Transport {
 
     const settled = new Promise<void>((resolve) => {
       this.onConnectionChange((link) => {
-        if (link.kind === "connected" || link.kind === "failed") resolve();
+        if (link.kind === "connected" || link.kind === "failed") {
+          resolve();
+        }
       });
     });
 
@@ -46,7 +48,9 @@ export class MqttTransport implements Transport {
     client.on("reconnect", () => this.#emitLink({ kind: "reconnecting" }));
     client.on("offline", () => this.#emitLink({ kind: "reconnecting" }));
     client.on("error", (error) => {
-      if (!("code" in error) || !AUTH_FAILURE_CODES.has(Number(error.code))) return;
+      if (!("code" in error) || !AUTH_FAILURE_CODES.has(Number(error.code))) {
+        return;
+      }
 
       client.end(true);
       this.#emitLink({ kind: "failed", reason: "The broker refused the username or password." });
@@ -54,9 +58,13 @@ export class MqttTransport implements Transport {
     client.on("message", (topic, payload, packet) => {
       const suffix = suffixFor(deviceId, topic);
 
-      if (suffix === undefined) return;
+      if (suffix === undefined) {
+        return;
+      }
 
-      for (const handler of this.#messageHandlers) handler(suffix, payload, packet.retain);
+      for (const handler of this.#messageHandlers) {
+        handler(suffix, payload, packet.retain);
+      }
     });
 
     await settled;
@@ -78,7 +86,9 @@ export class MqttTransport implements Transport {
   sendCommand(suffix: CommandSuffix, payload: Uint8Array): void {
     const client = this.#client;
 
-    if (client === undefined || !client.connected) throw new Error("not connected to the broker");
+    if (client === undefined || !client.connected) {
+      throw new Error("not connected to the broker");
+    }
 
     // SAFETY: mqtt-packet sizes the payload with Buffer.byteLength and sends it with stream.write,
     // which both take any Uint8Array; browsers have no global Buffer to convert to.
@@ -94,6 +104,8 @@ export class MqttTransport implements Transport {
   }
 
   #emitLink(link: Link): void {
-    for (const handler of this.#linkHandlers) handler(link);
+    for (const handler of this.#linkHandlers) {
+      handler(link);
+    }
   }
 }

@@ -72,7 +72,9 @@ class SimulatedNode {
   }
 
   #handle({ commandId, command }: SentCommand): void {
-    if (!this.#online) return;
+    if (!this.#online) {
+      return;
+    }
 
     const reason = this.#apply(command);
 
@@ -114,7 +116,9 @@ class SimulatedNode {
 
         return "config applied";
       case "led":
-        if (this.#status.mode === "autonomous") return "manual locked";
+        if (this.#status.mode === "autonomous") {
+          return "manual locked";
+        }
 
         this.#status = { ...this.#status, led: command.led };
 
@@ -123,7 +127,9 @@ class SimulatedNode {
   }
 
   #tick(): void {
-    if (!this.#online) return;
+    if (!this.#online) {
+      return;
+    }
 
     const lux = 300 + 200 * Math.sin(Date.now() / 60_000);
 
@@ -135,7 +141,9 @@ class SimulatedNode {
   }
 
   #publishEnergy(): void {
-    if (!this.#online) return;
+    if (!this.#online) {
+      return;
+    }
 
     this.#totalWh += 0.02;
 
@@ -159,7 +167,9 @@ class SimulatedNode {
   }
 
   #publish(suffix: string, payload: Uint8Array, retained = false): void {
-    if (this.#online) this.#transport.deliver(suffix, payload, retained);
+    if (this.#online) {
+      this.#transport.deliver(suffix, payload, retained);
+    }
   }
 
   #uptimeMs(): number {
@@ -172,7 +182,9 @@ export async function createTarget(): Promise<Target> {
   const node = new SimulatedNode(transport);
 
   transport.onConnectionChange((link) => {
-    if (link.kind === "connected") node.start();
+    if (link.kind === "connected") {
+      node.start();
+    }
   });
 
   return {

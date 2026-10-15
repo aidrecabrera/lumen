@@ -4,7 +4,9 @@ import { Dashboard } from "./ui/dashboard.ts";
 
 const root = document.querySelector<HTMLElement>("#app");
 
-if (root === null) throw new Error("missing #app");
+if (root === null) {
+  throw new Error("missing #app");
+}
 
 const target = await createTarget(root);
 

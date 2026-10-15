@@ -11,7 +11,9 @@ export function askForCredentials(root: HTMLElement, title: string): Promise<Cre
     const submit = (event: SubmitEvent): void => {
       event.preventDefault();
 
-      if (!(event.currentTarget instanceof HTMLFormElement)) return;
+      if (!(event.currentTarget instanceof HTMLFormElement)) {
+        return;
+      }
 
       const data = new FormData(event.currentTarget);
 

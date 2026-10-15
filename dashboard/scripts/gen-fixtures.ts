@@ -21,7 +21,10 @@ for (const [name, bytes] of Object.entries(files)) {
   const body = Array.from(bytes, (byte) => `0x${byte.toString(16).padStart(2, "0")}`);
   const rows: string[] = [];
 
-  for (let index = 0; index < body.length; index += 12) rows.push(`    ${body.slice(index, index + 12).join(", ")},`);
+  for (let index = 0; index < body.length; index += 12) {
+    rows.push(`    ${body.slice(index, index + 12).join(", ")},`);
+  }
+
   header.push(`static const uint8_t ${ident}[] = {`, ...rows, "};", `static const size_t ${ident}_LEN = sizeof(${ident});`, "");
 }
 

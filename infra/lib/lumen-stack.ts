@@ -243,7 +243,9 @@ export class LumenStack extends Stack {
       OauthDomain: oauthDomain,
     } satisfies Record<string, string>;
 
-    for (const [key, value] of Object.entries(outputs)) new CfnOutput(this, key, { value });
+    for (const [key, value] of Object.entries(outputs)) {
+      new CfnOutput(this, key, { value });
+    }
   }
 }
 

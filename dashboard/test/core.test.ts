@@ -118,7 +118,9 @@ describe("commands", () => {
   });
 
   it("has a message for every ack reason", () => {
-    for (const reason of ACK_REASONS) expect(ACK_MESSAGES[reason]).not.toBe("");
+    for (const reason of ACK_REASONS) {
+      expect(ACK_MESSAGES[reason]).not.toBe("");
+    }
   });
 
   it("stops a preset at the first failed step", async () => {
@@ -126,7 +128,9 @@ describe("commands", () => {
     const sender = new CommandSender(transport);
     const balanced = PRESETS.find((preset) => preset.id === "balanced");
 
-    if (balanced === undefined) throw new Error("balanced preset missing");
+    if (balanced === undefined) {
+      throw new Error("balanced preset missing");
+    }
 
     const result = runSequence(sender, balanced.steps, LED);
 

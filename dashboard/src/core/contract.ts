@@ -153,13 +153,21 @@ export type Command =
 export type DecodeResult = { ok: true; message: Inbound } | { ok: false; error: string };
 
 export function decodeInbound(suffix: string, payload: Uint8Array): DecodeResult {
-  if (suffix === TOPIC.availability) return decodeAvailability(payload);
+  if (suffix === TOPIC.availability) {
+    return decodeAvailability(payload);
+  }
 
-  if (suffix === TOPIC.telemetry) return decodeWith(TelemetrySchema, payload, (value) => ({ kind: "telemetry", value }));
+  if (suffix === TOPIC.telemetry) {
+    return decodeWith(TelemetrySchema, payload, (value) => ({ kind: "telemetry", value }));
+  }
 
-  if (suffix === TOPIC.status) return decodeWith(StatusSchema, payload, (value) => ({ kind: "status", value }));
+  if (suffix === TOPIC.status) {
+    return decodeWith(StatusSchema, payload, (value) => ({ kind: "status", value }));
+  }
 
-  if (suffix === TOPIC.energy) return decodeWith(EnergySchema, payload, (value) => ({ kind: "energy", value }));
+  if (suffix === TOPIC.energy) {
+    return decodeWith(EnergySchema, payload, (value) => ({ kind: "energy", value }));
+  }
 
   if (suffix.startsWith(ACK_PREFIX)) {
     const commandId = suffix.slice(ACK_PREFIX.length);
@@ -178,9 +186,13 @@ export function decodeInbound(suffix: string, payload: Uint8Array): DecodeResult
 function decodeAvailability(payload: Uint8Array): DecodeResult {
   const text = new TextDecoder().decode(payload);
 
-  if (text === "online") return { ok: true, message: { kind: "availability", online: true } };
+  if (text === "online") {
+    return { ok: true, message: { kind: "availability", online: true } };
+  }
 
-  if (text === "offline") return { ok: true, message: { kind: "availability", online: false } };
+  if (text === "offline") {
+    return { ok: true, message: { kind: "availability", online: false } };
+  }
 
   return { ok: false, error: `unknown availability "${text}"` };
 }
@@ -192,7 +204,9 @@ function decodeWith<T>(
 ): DecodeResult {
   const result = v.safeParse(schema, decodeOrUndefined(payload));
 
-  if (!result.success) return { ok: false, error: v.summarize(result.issues) };
+  if (!result.success) {
+    return { ok: false, error: v.summarize(result.issues) };
+  }
 
   return { ok: true, message: toMessage(result.output) };
 }

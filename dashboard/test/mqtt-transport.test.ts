@@ -42,7 +42,9 @@ describeTransportContract("mqtt", async () => {
       received: () =>
         new Promise((resolve) => {
           broker.on("publish", (packet, client) => {
-            if (client !== null) resolve({ suffix: packet.topic.slice(topicPrefix.length), payload: new Uint8Array(Buffer.from(packet.payload)) });
+            if (client !== null) {
+              resolve({ suffix: packet.topic.slice(topicPrefix.length), payload: new Uint8Array(Buffer.from(packet.payload)) });
+            }
           });
         }),
       settle: () => sleep(100),

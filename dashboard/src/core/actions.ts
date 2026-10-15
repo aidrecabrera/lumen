@@ -129,7 +129,9 @@ export function parseSettings(form: SettingsForm): SettingsParse {
   const number = (field: SettingsField): number => {
     const value = Number(form[field]);
 
-    if (form[field].trim() === "" || !Number.isFinite(value)) errors[field] = "Enter a number.";
+    if (form[field].trim() === "" || !Number.isFinite(value)) {
+      errors[field] = "Enter a number.";
+    }
 
     return value;
   };
@@ -143,15 +145,21 @@ export function parseSettings(form: SettingsForm): SettingsParse {
 
   const luxCeiling = number("lux_ceiling");
 
-  if (thresholds.temp_min_c > thresholds.temp_max_c) errors.temp_max_c = "Must be at least the minimum.";
+  if (thresholds.temp_min_c > thresholds.temp_max_c) {
+    errors.temp_max_c = "Must be at least the minimum.";
+  }
 
-  if (thresholds.humidity_min_pct > thresholds.humidity_max_pct) errors.humidity_max_pct = "Must be at least the minimum.";
+  if (thresholds.humidity_min_pct > thresholds.humidity_max_pct) {
+    errors.humidity_max_pct = "Must be at least the minimum.";
+  }
 
   if (luxCeiling < LUX_CEILING_MIN || luxCeiling > LUX_CEILING_MAX) {
     errors.lux_ceiling = `Enter ${LUX_CEILING_MIN} to ${LUX_CEILING_MAX}.`;
   }
 
-  if (Object.keys(errors).length > 0) return { ok: false, errors };
+  if (Object.keys(errors).length > 0) {
+    return { ok: false, errors };
+  }
 
   return { ok: true, command: { kind: "config", thresholds, lux_ceiling: luxCeiling } };
 }

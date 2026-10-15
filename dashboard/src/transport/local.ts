@@ -43,7 +43,9 @@ export class LocalTransport implements Transport {
   sendCommand(suffix: CommandSuffix, payload: Uint8Array): void {
     const socket = this.#socket;
 
-    if (socket === undefined || socket.readyState !== WebSocket.OPEN) throw new Error("not connected to the node");
+    if (socket === undefined || socket.readyState !== WebSocket.OPEN) {
+      throw new Error("not connected to the node");
+    }
 
     socket.send(encodeFrame(suffix, payload).slice());
   }
@@ -62,7 +64,9 @@ export class LocalTransport implements Transport {
     socket.addEventListener("close", () => {
       onFirstResult();
 
-      if (this.#stopped) return;
+      if (this.#stopped) {
+        return;
+      }
 
       this.#emitLink({ kind: "reconnecting" });
       setTimeout(() => this.#open(() => undefined), this.#nextDelay());
@@ -71,15 +75,21 @@ export class LocalTransport implements Transport {
   }
 
   #receive(event: MessageEvent): void {
-    if (!(event.data instanceof ArrayBuffer)) return;
+    if (!(event.data instanceof ArrayBuffer)) {
+      return;
+    }
 
     const frame = decodeFrame(new Uint8Array(event.data));
 
-    if (frame !== undefined) this.#deliver(frame.t, frame.p);
+    if (frame !== undefined) {
+      this.#deliver(frame.t, frame.p);
+    }
   }
 
   #deliver(suffix: string, payload: Uint8Array): void {
-    for (const handler of this.#messageHandlers) handler(suffix, payload, false);
+    for (const handler of this.#messageHandlers) {
+      handler(suffix, payload, false);
+    }
   }
 
   #nextDelay(): number {
@@ -91,6 +101,8 @@ export class LocalTransport implements Transport {
   }
 
   #emitLink(link: Link): void {
-    for (const handler of this.#linkHandlers) handler(link);
+    for (const handler of this.#linkHandlers) {
+      handler(link);
+    }
   }
 }

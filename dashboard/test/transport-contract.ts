@@ -34,7 +34,9 @@ export function describeTransportContract(name: string, setUp: () => Promise<Tra
 
       // the local transport reports the node online by itself, so availability is left out here.
       transport.onMessage((suffix, payload, retained) => {
-        if (suffix !== "availability") messages.push({ suffix, payload, retained });
+        if (suffix !== "availability") {
+          messages.push({ suffix, payload, retained });
+        }
       });
       await node.publish("status", fixtures.files["status.msgpack"], true);
       await transport.connect();

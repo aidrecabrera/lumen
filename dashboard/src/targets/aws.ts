@@ -49,7 +49,9 @@ class AmplifyCredentials extends auth.CredentialsProvider {
   override getCredentials(): auth.AWSCredentials | undefined {
     const credentials = this.#session?.credentials;
 
-    if (credentials === undefined) return undefined;
+    if (credentials === undefined) {
+      return undefined;
+    }
 
     return {
       aws_region: this.#region,
@@ -63,7 +65,9 @@ class AmplifyCredentials extends auth.CredentialsProvider {
   override async refreshCredentials(): Promise<void> {
     const session = await currentSession();
 
-    if (session === undefined) throw new Error("session expired");
+    if (session === undefined) {
+      throw new Error("session expired");
+    }
 
     this.#session = session;
   }
@@ -125,7 +129,9 @@ function configureAmplify(config: RuntimeConfig): void {
 async function currentSession(): Promise<Session | undefined> {
   const { identityId, credentials } = await fetchAuthSession();
 
-  if (identityId === undefined || credentials?.sessionToken === undefined) return undefined;
+  if (identityId === undefined || credentials?.sessionToken === undefined) {
+    return undefined;
+  }
 
   const { accessKeyId, secretAccessKey, sessionToken } = credentials;
 

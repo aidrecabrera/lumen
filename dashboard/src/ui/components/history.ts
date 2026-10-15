@@ -44,7 +44,9 @@ export function historyView({ history, onExport }: HistoryProps): TemplateResult
 }
 
 function drawChart(element: Element | undefined, series: Series, history: readonly HistoryPoint[]): void {
-  if (!(element instanceof HTMLElement)) return;
+  if (!(element instanceof HTMLElement)) {
+    return;
+  }
 
   // lit calls ref before it inserts new nodes; styles and width exist only once attached.
   if (!element.isConnected) {

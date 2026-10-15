@@ -66,7 +66,10 @@ export class CommandSender {
   #settle(id: string, outcome: Outcome): void {
     const pending = this.#pending.get(id);
 
-    if (pending === undefined) return;
+    if (pending === undefined) {
+      return;
+    }
+
     this.#pending.delete(id);
     clearTimeout(pending.timer);
     pending.settle(outcome);
@@ -87,7 +90,10 @@ export async function runSequence(sender: CommandSender, steps: readonly Step[],
   for (const [index, step] of steps.entries()) {
     last = await sender.send(step.command(currentLed));
 
-    if (last.kind !== "applied") return { kind: "stopped", stepNumber: index + 1, step, outcome: last };
+    if (last.kind !== "applied") {
+      return { kind: "stopped", stepNumber: index + 1, step, outcome: last };
+    }
+
     currentLed = last.ack.led;
   }
 

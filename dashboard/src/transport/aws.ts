@@ -51,7 +51,9 @@ export class AwsTransport implements Transport {
     // settles once subscribed, so a caller never sends before the node topics are live
     const settled = new Promise<void>((resolve) => {
       this.onConnectionChange((link) => {
-        if (link.kind !== "connecting") resolve();
+        if (link.kind !== "connecting") {
+          resolve();
+        }
       });
     });
 
@@ -94,7 +96,9 @@ export class AwsTransport implements Transport {
   sendCommand(suffix: CommandSuffix, payload: Uint8Array): void {
     const client = this.#client;
 
-    if (client === undefined || !this.#connected) throw new Error("not connected to aws iot");
+    if (client === undefined || !this.#connected) {
+      throw new Error("not connected to aws iot");
+    }
 
     // the sdk sends a Uint8Array's whole backing buffer and ignores the view bounds, so hand it exact bytes
     const exact = payload.slice().buffer;
@@ -119,14 +123,20 @@ export class AwsTransport implements Transport {
     const payload = message.payload;
 
     // the sdk decodes payloads as Buffer views over the received frame
-    if (suffix === undefined || !ArrayBuffer.isView(payload)) return;
+    if (suffix === undefined || !ArrayBuffer.isView(payload)) {
+      return;
+    }
 
     const bytes = new Uint8Array(payload.buffer, payload.byteOffset, payload.byteLength);
 
-    for (const handler of this.#messageHandlers) handler(suffix, bytes, message.retain ?? false);
+    for (const handler of this.#messageHandlers) {
+      handler(suffix, bytes, message.retain ?? false);
+    }
   }
 
   #emitLink(link: Link): void {
-    for (const handler of this.#linkHandlers) handler(link);
+    for (const handler of this.#linkHandlers) {
+      handler(link);
+    }
   }
 }
