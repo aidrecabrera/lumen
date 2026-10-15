@@ -67,7 +67,9 @@ void test_cloud_config_rejects_missing_field() {
     assertParse(
         CloudConfigParse::MISSING_FIELD,
         parse(R"({"endpoint":"h","port":8883,"auth":{"type":"password","username":"n","password":"p"}})")
-    );
+    );    std::string out_of_range = passwordJson();
+    out_of_range.replace(out_of_range.find("8883"), 4, "70000");
+    assertParse(CloudConfigParse::MISSING_FIELD, parse(out_of_range));
 }
 
 void test_cloud_config_rejects_bad_pem_marker() {

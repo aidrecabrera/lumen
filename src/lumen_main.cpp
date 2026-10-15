@@ -153,6 +153,9 @@ void setup() {
     requireBootStep(LedControl::init(), "led control");
     requireBootStep(EnergyTracker::init(), "energy tracker");
 
+    TaskManager::createQueues();
+    requireBootStep(TaskManager::createControlTasks(), "control tasks");
+
     SetupPortal::runIfNeeded();
     esp_task_wdt_reset();
 
@@ -168,8 +171,7 @@ void setup() {
     startRemotePath(config.device_id);
     esp_task_wdt_reset();
 
-    TaskManager::createQueues();
-    requireBootStep(TaskManager::createTasks(), "tasks");
+    requireBootStep(TaskManager::createNetworkTasks(), "network tasks");
 
     boot_failure_count = 0;
     ESP_LOGI(TAG, "boot complete for %s", config.device_id);

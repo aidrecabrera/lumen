@@ -13,15 +13,19 @@ static constexpr const char* WIFI_HOSTNAME_PREFIX = "lumen-";
 
 static constexpr uint32_t TASK_SENSORS_STACK_BYTES = 6144;
 static constexpr uint32_t TASK_LED_STACK_BYTES = 6144;
-static constexpr uint32_t TASK_NETWORK_STACK_BYTES = 12288;
+static constexpr uint32_t TASK_NETWORK_STACK_BYTES = 8192;
+static constexpr uint32_t TASK_CLOUD_STACK_BYTES = 12288;
 
 static constexpr uint8_t TASK_SENSORS_PRIORITY = 2;
 static constexpr uint8_t TASK_LED_PRIORITY = 3;
 static constexpr uint8_t TASK_NETWORK_PRIORITY = 4;
+// below the network task, so a blocked connect never delays the local path.
+static constexpr uint8_t TASK_CLOUD_PRIORITY = 1;
 
 static constexpr uint8_t TASK_SENSORS_CORE = 1;
 static constexpr uint8_t TASK_LED_CORE = 1;
 static constexpr uint8_t TASK_NETWORK_CORE = 0;
+static constexpr uint8_t TASK_CLOUD_CORE = 0;
 
 static constexpr uint32_t SENSOR_INTERVAL_MS = 2000;
 static constexpr uint32_t LED_CONTROL_INTERVAL_MS = 250;

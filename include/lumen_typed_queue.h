@@ -32,6 +32,12 @@ class StaticTypedQueue {
         return xQueueSend(handle_, &item, wait_ticks) == pdTRUE;
     }
 
+    // Replaces the held item, so the queue always has the latest one. Only for length 1.
+    void overwrite(const T& item) {
+        static_assert(Length == 1, "xQueueOverwrite needs a queue of length 1");
+        xQueueOverwrite(handle_, &item);
+    }
+
     bool receive(T& out_item, TickType_t wait_ticks) {
         return xQueueReceive(handle_, &out_item, wait_ticks) == pdTRUE;
     }

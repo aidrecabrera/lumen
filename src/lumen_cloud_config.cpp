@@ -1,6 +1,7 @@
 #include "lumen_cloud_config.h"
 
 #include <ArduinoJson.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -63,13 +64,13 @@ CloudConfigParse parseCloudConfig(const char* text, size_t length, CloudConfig& 
     }
 
     out_config.ca_pem[0] = '\0';
-    const uint16_t port = doc["port"] | 0U;
+    const uint32_t port = doc["port"] | 0U;
     JsonObjectConst auth = doc["auth"];
     if (!copyField(doc["endpoint"], out_config.endpoint, sizeof(out_config.endpoint)) ||
-        port == 0U || auth.isNull()) {
+        port == 0U || port > UINT16_MAX || auth.isNull()) {
         return CloudConfigParse::MISSING_FIELD;
     }
-    out_config.port = port;
+    out_config.port = static_cast<uint16_t>(port);
 
     const bool plain_tcp = doc["tls"] == false;
     if (!plain_tcp) {

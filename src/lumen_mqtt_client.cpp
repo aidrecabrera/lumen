@@ -6,7 +6,6 @@
 #include <WiFiClientSecure.h>
 #include <esp_log.h>
 #include <esp_system.h>
-#include <esp_task_wdt.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <string.h>
@@ -219,7 +218,6 @@ struct ConnectWithAuth {
 };
 
 bool connectBrokerLocked() {
-    esp_task_wdt_reset();
     if (!std::visit(ConnectWithAuth{}, cloud_config->auth)) {
         ESP_LOGW(TAG, "broker connect failed state=%d", broker_client.state());
         return false;
