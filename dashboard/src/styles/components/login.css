@@ -1,0 +1,15 @@
+.login {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 24rem;
+  margin: var(--space-6) auto;
+}
+
+.login__field {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.login__error {
+  color: var(--color-error);
+}

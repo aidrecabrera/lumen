@@ -1,0 +1,33 @@
+.lights__controls,
+.lights__group {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.lights__controls[aria-disabled="true"] {
+  opacity: 0.6;
+}
+
+.lights__controls[aria-busy="true"] {
+  cursor: progress;
+}
+
+.lights__legend {
+  margin-block-end: var(--space-2);
+  font-weight: 600;
+}
+
+.lights__lock {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-1);
+  background: var(--color-surface-muted);
+}
+
+.lights__note {
+  color: var(--color-text-muted);
+}

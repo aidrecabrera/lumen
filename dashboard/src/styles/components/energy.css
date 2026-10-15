@@ -1,0 +1,20 @@
+.energy__list {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.energy__item {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.energy__label {
+  color: var(--color-text-muted);
+}
+
+.energy__value {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}

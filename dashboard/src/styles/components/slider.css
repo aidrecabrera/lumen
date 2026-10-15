@@ -1,0 +1,31 @@
+.slider {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.slider__label {
+  display: flex;
+  justify-content: space-between;
+}
+
+.slider__value {
+  font-variant-numeric: tabular-nums;
+}
+
+.slider__input {
+  width: 100%;
+  min-height: var(--touch-target);
+  accent-color: var(--color-accent);
+}
+
+.slider[data-channel="red"] .slider__input {
+  accent-color: var(--color-red);
+}
+
+.slider[data-channel="blue"] .slider__input {
+  accent-color: var(--color-blue);
+}
+
+.slider[data-channel="far_red"] .slider__input {
+  accent-color: var(--color-far-red);
+}

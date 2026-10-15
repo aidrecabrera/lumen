@@ -1,5 +1,20 @@
 @layer reset, tokens, base, components;
+@import "uplot/dist/uPlot.min.css" layer(components);
 
 @import "./reset.css" layer(reset);
 @import "./tokens.css" layer(tokens);
 @import "./base.css" layer(base);
+@import "./components/banner.css" layer(components);
+@import "./components/panel.css" layer(components);
+@import "./components/readings.css" layer(components);
+@import "./components/control.css" layer(components);
+@import "./components/switch.css" layer(components);
+@import "./components/slider.css" layer(components);
+@import "./components/lights.css" layer(components);
+@import "./components/mode.css" layer(components);
+@import "./components/settings.css" layer(components);
+@import "./components/presets.css" layer(components);
+@import "./components/energy.css" layer(components);
+@import "./components/history.css" layer(components);
+@import "./components/login.css" layer(components);
+@import "./components/dev-panel.css" layer(components);

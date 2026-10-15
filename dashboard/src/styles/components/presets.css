@@ -1,0 +1,8 @@
+.presets__list {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.presets__list[aria-busy="true"] {
+  cursor: progress;
+}

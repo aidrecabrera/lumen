@@ -1,0 +1,45 @@
+.settings__form,
+.settings__group {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.settings__legend {
+  margin-block-end: var(--space-2);
+  font-weight: 600;
+}
+
+.settings__field {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.settings__input-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.settings__input {
+  width: 8rem;
+}
+
+.settings__unit,
+.settings__hint,
+.settings__note {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.settings__error {
+  color: var(--color-error);
+  font-size: var(--text-sm);
+}
+
+.settings__error:empty {
+  display: none;
+}
+
+.settings__form[aria-busy="true"] {
+  cursor: progress;
+}

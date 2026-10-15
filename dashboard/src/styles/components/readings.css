@@ -1,0 +1,37 @@
+.readings__list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.readings__label {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.readings__value {
+  font-size: var(--text-xl);
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+}
+
+.readings__unit {
+  font-size: var(--text-md);
+  color: var(--color-text-muted);
+}
+
+.readings__age,
+.readings__empty {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.readings[data-tone="stale"] .readings__value {
+  color: var(--color-stale);
+}
+
+@media (max-width: 30rem) {
+  .readings__value {
+    font-size: var(--text-lg);
+  }
+}

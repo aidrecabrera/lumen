@@ -1,0 +1,22 @@
+.history__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.history__chart {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.history__caption,
+.history__empty {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.history__plot {
+  overflow: hidden;
+  color: var(--color-text-muted);
+}

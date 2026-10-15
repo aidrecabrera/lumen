@@ -1,0 +1,12 @@
+.control__feedback {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.control__feedback[aria-invalid="false"] {
+  color: var(--color-ok);
+}
+
+.control__feedback[aria-invalid="true"] {
+  color: var(--color-error);
+}

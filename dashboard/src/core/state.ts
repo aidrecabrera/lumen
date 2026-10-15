@@ -141,3 +141,11 @@ export function ageText(at: number, now: number): string {
 
   return `Updated at ${clockTime(at)}`;
 }
+
+export function historyCsv(history: readonly HistoryPoint[]): string {
+  const rows = history.map((point) =>
+    [new Date(point.at).toISOString(), point.lux, point.temperature, point.humidity].join(","),
+  );
+
+  return ["time,daylight_lux,temperature_c,humidity_pct", ...rows].join("\n");
+}
