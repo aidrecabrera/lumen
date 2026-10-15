@@ -55,7 +55,40 @@ void test_parseCommandId_rejects_embedded_nul();
 void test_parseCommandId_failure_keeps_previous_id();
 void test_ackReasonText_matches_wire_text();
 
+// test_wire.cpp
+void test_wire_telemetry_matches_fixture();
+void test_wire_status_matches_fixture();
+void test_wire_energy_matches_fixture();
+void test_wire_ack_matches_fixture();
+void test_wire_encode_reports_overflow();
+void test_wire_frame_matches_fixture();
+void test_wire_frame_decodes_command();
+void test_wire_frame_rejects_unknown_suffix_and_bad_bytes();
+void test_wire_frame_rejects_oversized_payload();
+void test_contract_led_command_fixture_decodes();
+void test_contract_config_command_fixture_decodes();
+void test_contract_mode_command_fixture_decodes();
+void test_contract_read_command_id_for_unknown_kind();
 
+// test_auto_control.cpp
+void test_auto_turns_off_below_night_level();
+void test_auto_stays_off_inside_hysteresis_gap();
+void test_auto_comes_back_above_day_level();
+void test_auto_holds_brightness_outside_thresholds();
+void test_auto_brightness_follows_lux_ceiling();
+void test_lux_ceiling_parse_range();
+// test_cloud_config.cpp
+void test_cloud_config_parses_x509();
+void test_cloud_config_parses_password();
+void test_cloud_config_allows_plain_tcp_for_password_only();
+void test_cloud_config_rejects_unknown_auth_type();
+void test_cloud_config_rejects_missing_field();
+void test_cloud_config_rejects_bad_pem_marker();
+void test_cloud_config_rejects_oversized_and_bad_json();
+
+// test_validation.cpp (setup)
+void test_wifi_credentials_parse_rules();
+void test_local_password_hash_parse_rules();
 
 int main() {
     UNITY_BEGIN();
@@ -109,6 +142,39 @@ int main() {
     RUN_TEST(test_parseCommandId_rejects_embedded_nul);
     RUN_TEST(test_parseCommandId_failure_keeps_previous_id);
     RUN_TEST(test_ackReasonText_matches_wire_text);
+
+    RUN_TEST(test_wire_telemetry_matches_fixture);
+    RUN_TEST(test_wire_status_matches_fixture);
+    RUN_TEST(test_wire_energy_matches_fixture);
+    RUN_TEST(test_wire_ack_matches_fixture);
+    RUN_TEST(test_wire_encode_reports_overflow);
+    RUN_TEST(test_wire_frame_matches_fixture);
+    RUN_TEST(test_wire_frame_decodes_command);
+    RUN_TEST(test_wire_frame_rejects_unknown_suffix_and_bad_bytes);
+    RUN_TEST(test_wire_frame_rejects_oversized_payload);
+    RUN_TEST(test_contract_led_command_fixture_decodes);
+    RUN_TEST(test_contract_config_command_fixture_decodes);
+    RUN_TEST(test_contract_mode_command_fixture_decodes);
+    RUN_TEST(test_contract_read_command_id_for_unknown_kind);
+
+    RUN_TEST(test_auto_turns_off_below_night_level);
+    RUN_TEST(test_auto_stays_off_inside_hysteresis_gap);
+    RUN_TEST(test_auto_comes_back_above_day_level);
+    RUN_TEST(test_auto_holds_brightness_outside_thresholds);
+    RUN_TEST(test_auto_brightness_follows_lux_ceiling);
+    RUN_TEST(test_lux_ceiling_parse_range);
+
+
+    RUN_TEST(test_cloud_config_parses_x509);
+    RUN_TEST(test_cloud_config_parses_password);
+    RUN_TEST(test_cloud_config_allows_plain_tcp_for_password_only);
+    RUN_TEST(test_cloud_config_rejects_unknown_auth_type);
+    RUN_TEST(test_cloud_config_rejects_missing_field);
+    RUN_TEST(test_cloud_config_rejects_bad_pem_marker);
+    RUN_TEST(test_cloud_config_rejects_oversized_and_bad_json);
+
+    RUN_TEST(test_wifi_credentials_parse_rules);
+    RUN_TEST(test_local_password_hash_parse_rules);
 
     return UNITY_END();
 }

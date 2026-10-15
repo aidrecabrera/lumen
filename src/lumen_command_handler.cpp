@@ -9,12 +9,6 @@
 namespace {
 static const char* TAG = "command_handler";
 
-static constexpr size_t COMMAND_ID_DOC_SLACK = COMMAND_ID_MAX_LEN + 32U;
-static constexpr size_t LED_COMMAND_DOC_SIZE = JSON_OBJECT_SIZE(9) + COMMAND_ID_DOC_SLACK;
-static constexpr size_t CONFIG_COMMAND_DOC_SIZE =
-    JSON_OBJECT_SIZE(2) + JSON_OBJECT_SIZE(4) + COMMAND_ID_DOC_SLACK;
-static constexpr size_t MODE_COMMAND_DOC_SIZE = JSON_OBJECT_SIZE(2) + COMMAND_ID_DOC_SLACK;
-
 bool readBoolField(JsonVariantConst value, bool& out_value) {
     if (!value.is<bool>()) {
         return false;
@@ -53,7 +47,7 @@ bool readPercentField(JsonVariantConst value, uint8_t& out_value) {
 }
 
 bool readFloatField(JsonVariantConst value, float& out_value) {
-    // is<float>() accepts integer values too (ArduinoJson 6 NUMBER_BIT check).
+    // is<float>() accepts integer values too (arduinojson NumberBit check).
     if (!value.is<float>()) {
         return false;
     }
@@ -84,12 +78,8 @@ bool readModeField(JsonVariantConst value, DeviceMode& out_mode) {
 
 // Deserializes the frame and parses "command_id". This is the only place that turns an
 // untrusted id into a CommandId. A bad id cannot form an ack topic, so the caller cannot ack it.
-template <size_t DocSize>
 bool decodeBaseDocument(
-    const uint8_t* payload,
-    uint16_t length,
-    StaticJsonDocument<DocSize>& doc,
-    CommandId& out_command_id
+    const uint8_t* payload, uint16_t length, JsonDocument& doc, CommandId& out_command_id
 ) {
     // CommandHandler::decode() already rejected a null or empty payload.
     const DeserializationError error = deserializeMsgPack(doc, payload, length);
@@ -119,7 +109,7 @@ using CommandHandler::DecodeStatus;
 DecodeStatus decodeLedPayload(
     const uint8_t* payload, uint16_t length, CommandEnvelope& out_command
 ) {
-    StaticJsonDocument<LED_COMMAND_DOC_SIZE> doc;
+    JsonDocument doc;
     out_command = CommandEnvelope{};
 
     if (!decodeBaseDocument(payload, length, doc, out_command.command_id)) {
@@ -155,7 +145,7 @@ DecodeStatus decodeLedPayload(
 DecodeStatus decodeConfigPayload(
     const uint8_t* payload, uint16_t length, CommandEnvelope& out_command
 ) {
-    StaticJsonDocument<CONFIG_COMMAND_DOC_SIZE> doc;
+    JsonDocument doc;
     out_command = CommandEnvelope{};
 
     if (!decodeBaseDocument(payload, length, doc, out_command.command_id)) {
@@ -187,14 +177,28 @@ DecodeStatus decodeConfigPayload(
         return DecodeStatus::INVALID_FIELDS;
     }
 
-    out_command.payload = ConfigCommand{*valid_thresholds};
+    ConfigCommand command = {*valid_thresholds, std::nullopt};
+    const JsonVariantConst lux_ceiling_value = doc["lux_ceiling"];
+    if (!lux_ceiling_value.isNull()) {
+        float lux_ceiling = 0.0f;
+        if (readFloatField(lux_ceiling_value, lux_ceiling)) {
+            command.desired_lux_ceiling = ValidLuxCeiling::parse(lux_ceiling);
+        }
+
+        if (!command.desired_lux_ceiling) {
+            ESP_LOGW(TAG, "lux ceiling invalid");
+            return DecodeStatus::INVALID_FIELDS;
+        }
+    }
+
+    out_command.payload = command;
     return DecodeStatus::DECODED;
 }
 
 DecodeStatus decodeModePayload(
     const uint8_t* payload, uint16_t length, CommandEnvelope& out_command
 ) {
-    StaticJsonDocument<MODE_COMMAND_DOC_SIZE> doc;
+    JsonDocument doc;
     out_command = CommandEnvelope{};
 
     if (!decodeBaseDocument(payload, length, doc, out_command.command_id)) {
@@ -212,6 +216,12 @@ DecodeStatus decodeModePayload(
 }  // namespace
 
 namespace CommandHandler {
+bool readCommandId(const uint8_t* payload, uint16_t length, CommandId& out_command_id) {
+    JsonDocument doc;
+    return (payload != nullptr) && (length > 0U) &&
+           decodeBaseDocument(payload, length, doc, out_command_id);
+}
+
 DecodeStatus decode(
     CommandKind kind, const uint8_t* payload, uint16_t length, CommandEnvelope& out_command
 ) {

@@ -255,3 +255,18 @@ void test_ackReasonText_matches_wire_text() {
     TEST_ASSERT_EQUAL_STRING("invalid payload", ackReasonText(AckReason::INVALID_PAYLOAD));
     TEST_ASSERT_EQUAL_STRING("command queue full", ackReasonText(AckReason::COMMAND_QUEUE_FULL));
 }
+
+void test_wifi_credentials_parse_rules() {
+    TEST_ASSERT_TRUE(ValidWifiCredentials::parse("home", "password1").has_value());
+    TEST_ASSERT_TRUE(ValidWifiCredentials::parse("open-net", "").has_value());
+    TEST_ASSERT_FALSE(ValidWifiCredentials::parse("", "password1").has_value());
+    TEST_ASSERT_FALSE(ValidWifiCredentials::parse("home", "short").has_value());
+    TEST_ASSERT_FALSE(ValidWifiCredentials::parse(std::string(33, 's').c_str(), "").has_value());
+    TEST_ASSERT_EQUAL_STRING("home", ValidWifiCredentials::parse("home", "password1")->ssid());
+}
+
+void test_local_password_hash_parse_rules() {
+    TEST_ASSERT_TRUE(LocalPasswordHash::parse("0123456789abcdef0123456789abcdef").has_value());
+    TEST_ASSERT_FALSE(LocalPasswordHash::parse("0123456789ABCDEF0123456789abcdef").has_value());
+    TEST_ASSERT_FALSE(LocalPasswordHash::parse("0123").has_value());
+}

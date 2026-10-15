@@ -17,4 +17,7 @@ DegradedTier getDegradedTier();
 
 void resetReconnect();
 
+// also the mdns name and the setup network suffix.
+const char* hostname();
+
 }  // namespace WifiManager

@@ -1,13 +1,12 @@
 #include "lumen_led_control.h"
 
 #include <Adafruit_NeoPixel.h>
-#include <assert.h>
 #include <esp_log.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
-#include <math.h>
 #include <string.h>
 
+#include "lumen_auto_control.h"
 #include "lumen_board_config.h"
 #include "lumen_config_manager.h"
 #include "lumen_system_utils.h"
@@ -21,6 +20,8 @@ struct ControlState {
     DeviceMode mode;
     ValidLedState led;
     ValidThresholds thresholds;
+    ValidLuxCeiling lux_ceiling;
+    AutoState auto_state;
 };
 
 // Empty until init() loads the persisted state. Guarded by state_mutex.
@@ -47,42 +48,6 @@ void lockState() {
 
 // Only called after lockState(), which created the mutex.
 void unlockState() { xSemaphoreGive(state_mutex); }
-
-bool isReadingWithinThresholds(const SensorReading& reading, const ThresholdConfig& thresholds) {
-    if (!isfinite(reading.temperature_c) || !isfinite(reading.humidity_pct)) {
-        return false;
-    }
-
-    return (reading.temperature_c >= thresholds.temp_min_c) &&
-           (reading.temperature_c <= thresholds.temp_max_c) &&
-           (reading.humidity_pct >= thresholds.humidity_min_pct) &&
-           (reading.humidity_pct <= thresholds.humidity_max_pct);
-}
-
-uint8_t clampBrightness(float brightness_pct) {
-    if (brightness_pct <= 0.0f) {
-        return 0U;
-    }
-
-    if (brightness_pct >= 100.0f) {
-        return 100U;
-    }
-
-    return static_cast<uint8_t>(brightness_pct + 0.5f);
-}
-
-uint8_t computeAutonomousBrightness(float light_lux) {
-    // Sensors::readLight accepts only finite lux >= 0. A NaN here would make clampBrightness
-    // cast NaN to uint8_t, so stop loudly instead.
-    assert(isfinite(light_lux) && light_lux >= 0.0f);
-
-    if (light_lux >= AUTONOMOUS_LUX_CEILING) {
-        return 0U;
-    }
-
-    const float ratio = 1.0f - (light_lux / AUTONOMOUS_LUX_CEILING);
-    return clampBrightness(ratio * 100.0f);
-}
 
 void showOff() {
     led_strip.clear();
@@ -118,6 +83,7 @@ bool persistRuntimeState(const ControlState& next) {
     config.mode = next.mode;
     config.led = next.led;
     config.thresholds = next.thresholds;
+    config.lux_ceiling = next.lux_ceiling;
     return ConfigManager::saveRuntimeConfig(config);
 }
 
@@ -138,14 +104,15 @@ void snapshotModeAndLed(DeviceMode& mode, LedState& led) {
 }
 
 AckMessage buildAck(
-    const CommandId& command_id,
+    const CommandEnvelope& command,
     AckResult result,
     AckReason reason,
     DeviceMode mode,
     const LedState& led
 ) {
     AckMessage ack = {};
-    ack.command_id = command_id;
+    ack.command_id = command.command_id;
+    ack.source = command.source;
     ack.result = result;
     ack.timestamp_ms = getNowMs();
     ack.mode = mode;
@@ -154,37 +121,38 @@ AckMessage buildAck(
     return ack;
 }
 
-AckMessage buildAckFromCurrent(const CommandId& command_id, AckResult result, AckReason reason) {
+AckMessage buildAckFromCurrent(const CommandEnvelope& command, AckResult result, AckReason reason) {
     DeviceMode mode = DeviceMode::AUTONOMOUS;
     LedState led = {};
     snapshotModeAndLed(mode, led);
-    return buildAck(command_id, result, reason, mode, led);
+    return buildAck(command, result, reason, mode, led);
 }
 
-AckMessage rejectCommand(const CommandId& command_id, AckReason reason) {
+AckMessage rejectCommand(const CommandEnvelope& command, AckReason reason) {
     ESP_LOGW(TAG, "command rejected: %s", ackReasonText(reason));
-    return buildAckFromCurrent(command_id, AckResult::REJECTED, reason);
+    return buildAckFromCurrent(command, AckResult::REJECTED, reason);
 }
 
 // The apply* functions get the state snapshot that applyCommand() took after init().
 // current_state is set then, so their writes through current_state-> are safe.
 AckMessage applyModeChange(
-    const CommandId& command_id, const ModeCommand& command, const ControlState& snapshot
+    const CommandEnvelope& envelope, const ModeCommand& command, const ControlState& snapshot
 ) {
     ControlState next = snapshot;
     next.mode = command.desired_mode;
 
     if (!persistRuntimeState(next)) {
-        return rejectCommand(command_id, AckReason::PERSIST_FAILED);
+        return rejectCommand(envelope, AckReason::PERSIST_FAILED);
     }
 
     lockState();
     current_state->mode = command.desired_mode;
+    current_state->auto_state = AutoState::ACTIVE;
     unlockState();
 
     ESP_LOGI(TAG, "mode changed");
     return buildAck(
-        command_id,
+        envelope,
         AckResult::APPLIED,
         AckReason::MODE_APPLIED,
         command.desired_mode,
@@ -193,36 +161,38 @@ AckMessage applyModeChange(
 }
 
 AckMessage applyConfigChange(
-    const CommandId& command_id, const ConfigCommand& command, const ControlState& snapshot
+    const CommandEnvelope& envelope, const ConfigCommand& command, const ControlState& snapshot
 ) {
     ControlState next = snapshot;
     next.thresholds = command.desired_thresholds;
+    next.lux_ceiling = command.desired_lux_ceiling.value_or(snapshot.lux_ceiling);
 
     if (!persistRuntimeState(next)) {
-        return rejectCommand(command_id, AckReason::PERSIST_FAILED);
+        return rejectCommand(envelope, AckReason::PERSIST_FAILED);
     }
 
     lockState();
-    current_state->thresholds = command.desired_thresholds;
+    current_state->thresholds = next.thresholds;
+    current_state->lux_ceiling = next.lux_ceiling;
     unlockState();
 
     return buildAck(
-        command_id, AckResult::APPLIED, AckReason::CONFIG_APPLIED, snapshot.mode, snapshot.led.raw()
+        envelope, AckResult::APPLIED, AckReason::CONFIG_APPLIED, snapshot.mode, snapshot.led.raw()
     );
 }
 
 AckMessage applyLedChange(
-    const CommandId& command_id, const LedCommand& command, const ControlState& snapshot
+    const CommandEnvelope& envelope, const LedCommand& command, const ControlState& snapshot
 ) {
     if (snapshot.mode == DeviceMode::AUTONOMOUS) {
-        return rejectCommand(command_id, AckReason::MANUAL_LOCKED);
+        return rejectCommand(envelope, AckReason::MANUAL_LOCKED);
     }
 
     ControlState next = snapshot;
     next.led = command.desired_led;
 
     if (!persistRuntimeState(next)) {
-        return rejectCommand(command_id, AckReason::PERSIST_FAILED);
+        return rejectCommand(envelope, AckReason::PERSIST_FAILED);
     }
 
     lockState();
@@ -231,7 +201,7 @@ AckMessage applyLedChange(
 
     applyToHardware(command.desired_led.raw());
     return buildAck(
-        command_id,
+        envelope,
         AckResult::APPLIED,
         AckReason::LED_APPLIED,
         snapshot.mode,
@@ -241,19 +211,19 @@ AckMessage applyLedChange(
 
 // std::visit needs one overload per CommandPayload alternative, so a new kind is a compile error.
 struct CommandApplier {
-    const CommandId& command_id;
+    const CommandEnvelope& envelope;
     const ControlState& snapshot;
 
     AckMessage operator()(const LedCommand& command) const {
-        return applyLedChange(command_id, command, snapshot);
+        return applyLedChange(envelope, command, snapshot);
     }
 
     AckMessage operator()(const ConfigCommand& command) const {
-        return applyConfigChange(command_id, command, snapshot);
+        return applyConfigChange(envelope, command, snapshot);
     }
 
     AckMessage operator()(const ModeCommand& command) const {
-        return applyModeChange(command_id, command, snapshot);
+        return applyModeChange(envelope, command, snapshot);
     }
 };
 }  // namespace
@@ -263,7 +233,9 @@ namespace LedControl {
 bool init() {
     createStateMutexOnce();
     const RuntimeConfig config = ConfigManager::getConfigSnapshot();
-    const ControlState loaded = {config.mode, config.led, config.thresholds};
+    const ControlState loaded = {
+        config.mode, config.led, config.thresholds, config.lux_ceiling, AutoState::ACTIVE
+    };
 
     led_strip.begin();
     applyToHardware(loaded.led.raw());
@@ -279,62 +251,51 @@ bool init() {
 AckMessage applyCommand(const CommandEnvelope& command) {
     const std::optional<ControlState> snapshot = snapshotState();
     if (!snapshot) {
-        return buildAckFromCurrent(command.command_id, AckResult::REJECTED, AckReason::NOT_READY);
+        return buildAckFromCurrent(command, AckResult::REJECTED, AckReason::NOT_READY);
     }
 
     // The payload holds only trivially copyable types, so it is never valueless and
     // std::visit cannot throw.
-    return std::visit(CommandApplier{command.command_id, *snapshot}, command.payload);
+    return std::visit(CommandApplier{command, *snapshot}, command.payload);
 }
 
-AckMessage buildRejectedAck(const CommandId& command_id, AckReason reason) {
+AckMessage buildRejectedAck(const CommandId& command_id, CommandSource source, AckReason reason) {
     ESP_LOGW(
         TAG, "command %s rejected before apply: %s", command_id.c_str(), ackReasonText(reason)
     );
-    return buildAckFromCurrent(command_id, AckResult::REJECTED, reason);
+    CommandEnvelope command = {};
+    command.command_id = command_id;
+    command.source = source;
+    return buildAckFromCurrent(command, AckResult::REJECTED, reason);
 }
 
-void controlTick(const SensorReading& latest_reading) {
+bool controlTick(const SensorReading& latest_reading) {
     const std::optional<ControlState> snapshot = snapshotState();
-    if (!snapshot) {
-        return;
+    if (!snapshot || snapshot->mode != DeviceMode::AUTONOMOUS || !snapshot->led.raw().power) {
+        return false;
     }
 
-    if (snapshot->mode != DeviceMode::AUTONOMOUS) {
-        return;
+    const AutoDecision decision = decideAutonomous(
+        snapshot->auto_state, latest_reading, snapshot->thresholds.raw(), snapshot->lux_ceiling
+    );
+    const uint8_t current_pct = snapshot->led.raw().brightness_pct;
+    const uint8_t next_pct = decision.brightness_pct.value_or(current_pct);
+    if (decision.state == snapshot->auto_state && next_pct == current_pct) {
+        return false;
     }
 
-    if (!snapshot->led.raw().power) {
-        return;
-    }
+    // decideAutonomous keeps brightness at 100 or less, so this parse fails only on a bug.
+    LedState next_led = snapshot->led.raw();
+    next_led.brightness_pct = next_pct;
+    const ValidLedState valid_next_led = ValidLedState::parse(next_led).value();
 
-    if (!isReadingWithinThresholds(latest_reading, snapshot->thresholds.raw())) {
-        ESP_LOGW(TAG, "autonomous reading outside thresholds, holding brightness");
-        return;
-    }
-
-    const uint8_t next_brightness_pct = computeAutonomousBrightness(latest_reading.light_lux);
-
-    if (next_brightness_pct == snapshot->led.raw().brightness_pct) {
-        return;
-    }
-
-    // clampBrightness() keeps the value at 100 or less, so this parse fails only on a code bug.
     lockState();
-    LedState next_led = current_state->led.raw();
-    next_led.brightness_pct = next_brightness_pct;
-    const std::optional<ValidLedState> valid_next_led = ValidLedState::parse(next_led);
-    if (valid_next_led) {
-        current_state->led = *valid_next_led;
-    }
+    current_state->led = valid_next_led;
+    current_state->auto_state = decision.state;
     unlockState();
 
-    if (!valid_next_led) {
-        ESP_LOGE(TAG, "autonomous brightness %u rejected", next_brightness_pct);
-        return;
-    }
-
     applyToHardware(next_led);
+    return true;
 }
 
 LedState getCurrentLedState() {
@@ -351,17 +312,21 @@ DeviceMode getCurrentMode() {
     return mode;
 }
 
-StatusMessage buildStatusMessage(DegradedTier degraded_tier) {
-    DeviceMode mode = DeviceMode::AUTONOMOUS;
-    LedState led = {};
-    snapshotModeAndLed(mode, led);
-
+// degraded_tier and cloud belong to the network task, which sets them before publishing.
+StatusMessage buildStatusMessage() {
     StatusMessage status = {};
     status.timestamp_ms = getNowMs();
-    status.mode = mode;
-    status.led = led;
-    status.degraded_tier = degraded_tier;
     status.uptime_sec = getUptimeSec();
+
+    const std::optional<ControlState> snapshot = snapshotState();
+    if (snapshot) {
+        status.mode = snapshot->mode;
+        status.led = snapshot->led.raw();
+        status.auto_state = snapshot->auto_state;
+        status.thresholds = snapshot->thresholds.raw();
+        status.lux_ceiling = snapshot->lux_ceiling.raw();
+    }
+
     return status;
 }
 

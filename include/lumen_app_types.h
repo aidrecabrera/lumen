@@ -9,6 +9,7 @@
 
 static constexpr size_t DEVICE_ID_MAX_LEN = 24U;
 static constexpr size_t COMMAND_ID_MAX_LEN = 37U;
+static constexpr size_t COMMAND_PAYLOAD_MAX_BYTES = 256U;
 
 enum class DeviceMode : uint8_t { AUTONOMOUS = 0, MANUAL = 1 };
 
@@ -75,6 +76,41 @@ enum class DegradedTier : uint8_t {
     WIFI_RETRY_LIMIT = 2,  // WIFI_FAILURE_THRESHOLD or more failed attempts
 };
 
+enum class AutoState : uint8_t { ACTIVE, NIGHT_OFF, PAUSED_OUT_OF_RANGE };
+
+inline const char* autoStateText(AutoState state) {
+    switch (state) {
+        case AutoState::ACTIVE:
+            return "active";
+        case AutoState::NIGHT_OFF:
+            return "night_off";
+        case AutoState::PAUSED_OUT_OF_RANGE:
+            return "paused_out_of_range";
+    }
+
+    return "unknown";
+}
+
+enum class CloudState : uint8_t { CONNECTED, CONNECTING, NOT_CONFIGURED, INVALID_CONFIG };
+
+inline const char* cloudStateText(CloudState state) {
+    switch (state) {
+        case CloudState::CONNECTED:
+            return "connected";
+        case CloudState::CONNECTING:
+            return "connecting";
+        case CloudState::NOT_CONFIGURED:
+            return "not_configured";
+        case CloudState::INVALID_CONFIG:
+            return "invalid_config";
+    }
+
+    return "unknown";
+}
+
+// an ack goes back on the path its command came from.
+enum class CommandSource : uint8_t { CLOUD, LOCAL };
+
 struct ThresholdConfig {
     float temp_min_c;
     float temp_max_c;
@@ -133,12 +169,56 @@ class EnergyTotalWh {
     float raw_wh_;
 };
 
+// lux where auto brightness reaches zero, LUX_CEILING_MIN..LUX_CEILING_MAX.
+class ValidLuxCeiling {
+   public:
+    static std::optional<ValidLuxCeiling> parse(float raw_lux);
+    float raw() const { return raw_lux_; }
+
+   private:
+    explicit ValidLuxCeiling(float raw_lux) : raw_lux_(raw_lux) {}
+
+    float raw_lux_;
+};
+
+static constexpr size_t WIFI_SSID_MAX_LEN = 32U;
+static constexpr size_t WIFI_PASSWORD_MAX_LEN = 63U;
+static constexpr size_t LOCAL_PASSWORD_MIN_LEN = 8U;
+static constexpr size_t LOCAL_PASSWORD_HASH_LEN = 32U;
+
+// ssid 1..32 bytes; password empty (open network) or 8..63 bytes, as wpa2 allows.
+class ValidWifiCredentials {
+   public:
+    static std::optional<ValidWifiCredentials> parse(const char* ssid, const char* password);
+    const char* ssid() const { return ssid_; }
+    const char* password() const { return password_; }
+
+   private:
+    ValidWifiCredentials() = default;
+
+    char ssid_[WIFI_SSID_MAX_LEN + 1] = {};
+    char password_[WIFI_PASSWORD_MAX_LEN + 1] = {};
+};
+
+// md5 digest-auth hash of the local password, 32 lowercase hex characters.
+class LocalPasswordHash {
+   public:
+    static std::optional<LocalPasswordHash> parse(const char* hex);
+    const char* c_str() const { return hex_; }
+
+   private:
+    LocalPasswordHash() = default;
+
+    char hex_[LOCAL_PASSWORD_HASH_LEN + 1] = {};
+};
+
 struct RuntimeConfig {
     char device_id[DEVICE_ID_MAX_LEN];
     DeviceMode mode;
     ValidThresholds thresholds;
     ValidLedState led;
     EnergyTotalWh energy_total_wh;
+    ValidLuxCeiling lux_ceiling;
 };
 
 struct SensorReading {
@@ -155,14 +235,20 @@ struct StatusMessage {
     LedState led;
     DegradedTier degraded_tier;
     uint32_t uptime_sec;
+    AutoState auto_state;
+    CloudState cloud;
+    ThresholdConfig thresholds;
+    float lux_ceiling;
 };
 
 struct LedCommand {
     ValidLedState desired_led;
 };
 
+// optional, so a config command without it keeps the current ceiling.
 struct ConfigCommand {
     ValidThresholds desired_thresholds;
+    std::optional<ValidLuxCeiling> desired_lux_ceiling;
 };
 
 struct ModeCommand {
@@ -175,8 +261,12 @@ using CommandPayload = std::variant<ModeCommand, LedCommand, ConfigCommand>;
 
 struct CommandEnvelope {
     CommandId command_id;
+    CommandSource source;
     CommandPayload payload;
 };
+
+using InboundCommandFn =
+    void (*)(CommandSource source, CommandKind kind, const uint8_t* payload, uint16_t length);
 
 struct EnergyMessage {
     uint64_t timestamp_ms;
@@ -188,6 +278,7 @@ struct EnergyMessage {
 
 struct AckMessage {
     CommandId command_id;
+    CommandSource source;
     AckResult result;
     uint64_t timestamp_ms;
     DeviceMode mode;

@@ -1,19 +1,23 @@
 #include "lumen_mqtt_client.h"
 
-#include <ArduinoJson.h>
 #include <Client.h>
 #include <PubSubClient.h>
 #include <WiFiClient.h>
+#include <WiFiClientSecure.h>
 #include <esp_log.h>
 #include <esp_system.h>
+#include <esp_task_wdt.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <string.h>
+
+#include <atomic>
 
 #include "lumen_board_config.h"
 #include "lumen_system_utils.h"
 #include "lumen_typed_queue.h"
 #include "lumen_wifi_manager.h"
+#include "lumen_wire.h"
 
 namespace {
 static const char* TAG = "mqtt_client";
@@ -21,24 +25,19 @@ static const char* TAG = "mqtt_client";
 static constexpr uint32_t MQTT_BACKOFF_BASE_MS = 1000U;
 static constexpr uint32_t MQTT_BACKOFF_MAX_MS = 30000U;
 
+// tcp connect plus tls handshake must stay inside the 10 s task watchdog.
+static constexpr uint32_t CONNECT_TIMEOUT_SEC = 4U;
+
 static constexpr size_t TOPIC_LEN = 96U;
 static constexpr size_t ACK_TOPIC_LEN = 128U;
 static constexpr char CLIENT_ID_PREFIX[] = "lumen-fw-";
 static constexpr size_t CLIENT_ID_LEN = sizeof(CLIENT_ID_PREFIX) + DEVICE_ID_MAX_LEN;
-static constexpr size_t ACK_DOC_SIZE = STATUS_DOC_SIZE + 128U;
 
 static constexpr size_t INBOUND_QUEUE_LENGTH = 4U;
 static constexpr size_t MQTT_FIXED_HEADER_SLACK = 16U;
 
-constexpr size_t maxSize(size_t a, size_t b) { return (a > b) ? a : b; }
-
-static constexpr size_t MQTT_MAX_PAYLOAD_SIZE = maxSize(
-    COMMAND_DOC_SIZE,
-    maxSize(TELEMETRY_DOC_SIZE, maxSize(STATUS_DOC_SIZE, maxSize(ENERGY_DOC_SIZE, ACK_DOC_SIZE)))
-);
-
 static constexpr uint16_t MQTT_PACKET_BUFFER_SIZE =
-    static_cast<uint16_t>(ACK_TOPIC_LEN + MQTT_MAX_PAYLOAD_SIZE + MQTT_FIXED_HEADER_SLACK);
+    static_cast<uint16_t>(ACK_TOPIC_LEN + STATUS_PAYLOAD_MAX + MQTT_FIXED_HEADER_SLACK);
 
 static const char* const kAvailabilityOnline = "online";
 static const char* const kAvailabilityOffline = "offline";
@@ -46,7 +45,7 @@ static const char* const kAvailabilityOffline = "offline";
 struct InboundMessage {
     CommandKind kind;
     uint16_t length;
-    uint8_t payload[COMMAND_DOC_SIZE];
+    uint8_t payload[COMMAND_PAYLOAD_MAX_BYTES];
 };
 
 class LockGuard {
@@ -71,18 +70,20 @@ class LockGuard {
     bool locked_;
 };
 
-static WiFiClient default_wifi_client;
-static Client* network_client = &default_wifi_client;
+static WiFiClient plain_client;
+static WiFiClientSecure secure_client;
 static PubSubClient broker_client;
+static const CloudConfig* cloud_config = nullptr;
 
 static StaticSemaphore_t mqtt_mutex_storage;
 static SemaphoreHandle_t mqtt_mutex = nullptr;
 
 static StaticTypedQueue<InboundMessage, INBOUND_QUEUE_LENGTH> inbound_queue;
 
-static bool is_initialized = false;
+static std::atomic<CloudState> cloud_state{CloudState::NOT_CONFIGURED};
 static char device_id_buf[DEVICE_ID_MAX_LEN] = {};
 static char client_id_buf[CLIENT_ID_LEN] = {};
+static char topic_prefix[TOPIC_LEN] = {};
 static char telemetry_topic[TOPIC_LEN] = {};
 static char status_topic[TOPIC_LEN] = {};
 static char energy_topic[TOPIC_LEN] = {};
@@ -94,11 +95,14 @@ static char cmd_mode_topic[TOPIC_LEN] = {};
 static uint32_t reconnect_backoff_ms = MQTT_BACKOFF_BASE_MS;
 static uint64_t next_connect_ms = 0;
 static WifiConnectedFn wifi_connected_fn = nullptr;
-static MqttInboundCallback inbound_callback = nullptr;
+static InboundCommandFn inbound_callback = nullptr;
 
 bool defaultWifiConnected() { return WifiManager::isConnected(); }
 
-bool hasText(const char* text) { return (text != nullptr) && (text[0] != '\0'); }
+bool isEnabled() {
+    const CloudState state = cloud_state.load();
+    return state == CloudState::CONNECTING || state == CloudState::CONNECTED;
+}
 
 // Static creation with static buffers cannot return NULL (IDF 4.4 freertos/semphr.h:793 and
 // freertos/queue.h:202: NULL only when the buffer is NULL), so the handles need no null check.
@@ -113,51 +117,37 @@ void ensureInfrastructure() {
 }
 
 bool buildTopic(char* out_topic, size_t out_len, const char* suffix) {
-    const int written =
-        snprintf(out_topic, out_len, "%s/%s/%s", MQTT_TOPIC_ROOT, device_id_buf, suffix);
-
+    const int written = snprintf(out_topic, out_len, "%s%s", topic_prefix, suffix);
     return (written > 0) && (static_cast<size_t>(written) < out_len);
 }
 
 // parseCommandId() guarantees that command_id is one valid topic level.
 bool buildAckTopic(char* out_topic, size_t out_len, const CommandId& command_id) {
     const int written = snprintf(
-        out_topic,
-        out_len,
-        "%s/%s/%s/%s",
-        MQTT_TOPIC_ROOT,
-        device_id_buf,
-        MQTT_TOPIC_ACK_PREFIX,
-        command_id.c_str()
+        out_topic, out_len, "%s%s/%s", topic_prefix, MQTT_TOPIC_ACK_PREFIX, command_id.c_str()
     );
-
     return (written > 0) && (static_cast<size_t>(written) < out_len);
 }
 
-bool buildClientId() {
-    const int written =
-        snprintf(client_id_buf, sizeof(client_id_buf), "%s%s", CLIENT_ID_PREFIX, device_id_buf);
-    return (written > 0) && (static_cast<size_t>(written) < sizeof(client_id_buf));
-}
-
 bool buildTopics() {
-    const bool has_telemetry =
-        buildTopic(telemetry_topic, sizeof(telemetry_topic), MQTT_TOPIC_TELEMETRY_SUFFIX);
-    const bool has_status =
-        buildTopic(status_topic, sizeof(status_topic), MQTT_TOPIC_STATUS_SUFFIX);
-    const bool has_energy =
-        buildTopic(energy_topic, sizeof(energy_topic), MQTT_TOPIC_ENERGY_SUFFIX);
-    const bool has_availability =
-        buildTopic(availability_topic, sizeof(availability_topic), MQTT_TOPIC_AVAILABILITY_SUFFIX);
-    const bool has_cmd_led =
-        buildTopic(cmd_led_topic, sizeof(cmd_led_topic), MQTT_TOPIC_CMD_LED_SUFFIX);
-    const bool has_cmd_config =
-        buildTopic(cmd_config_topic, sizeof(cmd_config_topic), MQTT_TOPIC_CMD_CONFIG_SUFFIX);
-    const bool has_cmd_mode =
-        buildTopic(cmd_mode_topic, sizeof(cmd_mode_topic), MQTT_TOPIC_CMD_MODE_SUFFIX);
+    const int prefix_written =
+        snprintf(topic_prefix, sizeof(topic_prefix), "%s/%s/", MQTT_TOPIC_ROOT, device_id_buf);
+    const int client_written =
+        snprintf(client_id_buf, sizeof(client_id_buf), "%s%s", CLIENT_ID_PREFIX, device_id_buf);
+    if (prefix_written <= 0 || static_cast<size_t>(prefix_written) >= sizeof(topic_prefix) ||
+        client_written <= 0 || static_cast<size_t>(client_written) >= sizeof(client_id_buf)) {
+        return false;
+    }
 
-    return has_telemetry && has_status && has_energy && has_availability && has_cmd_led &&
-           has_cmd_config && has_cmd_mode;
+    return buildTopic(telemetry_topic, sizeof(telemetry_topic), MQTT_TOPIC_TELEMETRY_SUFFIX) &&
+           buildTopic(status_topic, sizeof(status_topic), MQTT_TOPIC_STATUS_SUFFIX) &&
+           buildTopic(energy_topic, sizeof(energy_topic), MQTT_TOPIC_ENERGY_SUFFIX) &&
+           buildTopic(
+               availability_topic, sizeof(availability_topic), MQTT_TOPIC_AVAILABILITY_SUFFIX
+           ) &&
+           buildTopic(cmd_led_topic, sizeof(cmd_led_topic), MQTT_TOPIC_CMD_LED_SUFFIX) &&
+           buildTopic(cmd_config_topic, sizeof(cmd_config_topic), MQTT_TOPIC_CMD_CONFIG_SUFFIX) &&
+           buildTopic(cmd_mode_topic, sizeof(cmd_mode_topic), MQTT_TOPIC_CMD_MODE_SUFFIX);
 }
 
 void resetReconnectState() {
@@ -170,49 +160,8 @@ void scheduleReconnect(uint64_t now_ms) {
     reconnect_backoff_ms = nextBackoffMs(reconnect_backoff_ms, MQTT_BACKOFF_MAX_MS);
 }
 
-void fillLedObject(JsonObject led_obj, const LedState& led) {
-    led_obj["power"] = led.power;
-    led_obj["brightness_pct"] = led.brightness_pct;
-    led_obj["red_enabled"] = led.red_enabled;
-    led_obj["blue_enabled"] = led.blue_enabled;
-    led_obj["far_red_enabled"] = led.far_red_enabled;
-    led_obj["red_dist_pct"] = led.red_dist_pct;
-    led_obj["blue_dist_pct"] = led.blue_dist_pct;
-    led_obj["far_red_dist_pct"] = led.far_red_dist_pct;
-}
-
-bool serializeDocument(
-    const JsonDocument& doc, uint8_t* payload_buf, size_t payload_len, size_t& encoded_len
-) {
-    if (doc.overflowed()) {
-        return false;
-    }
-
-    encoded_len = serializeMsgPack(doc, payload_buf, payload_len);
-    return encoded_len > 0U;
-}
-
-bool publishPayloadLocked(
-    const char* topic, const uint8_t* payload_buf, size_t payload_len, bool retained
-) {
-    if (!broker_client.connected()) {
-        ESP_LOGW(TAG, "publish while offline");
-        return false;
-    }
-
-    const bool was_published = broker_client.publish(topic, payload_buf, payload_len, retained);
-    if (!was_published) {
-        ESP_LOGW(TAG, "publish failed %s", topic);
-        return false;
-    }
-
-    return true;
-}
-
-// Callers pass static topic buffers, stack payload buffers, and encoded_len > 0
-// (serializeDocument returns false for an empty encoding).
-bool publishPayload(const char* topic, const uint8_t* payload_buf, size_t payload_len) {
-    if (!is_initialized) {
+bool publishPayload(const char* topic, const uint8_t* payload, size_t length, bool retained) {
+    if (!isEnabled() || length == 0U) {
         return false;
     }
 
@@ -222,128 +171,66 @@ bool publishPayload(const char* topic, const uint8_t* payload_buf, size_t payloa
         return false;
     }
 
-    return publishPayloadLocked(topic, payload_buf, payload_len, false);
-}
-
-bool encodeTelemetry(
-    const SensorReading& reading, uint8_t* payload_buf, size_t payload_len, size_t& encoded_len
-) {
-    StaticJsonDocument<TELEMETRY_DOC_SIZE> doc;
-    doc["timestamp_ms"] = reading.timestamp_ms;
-    doc["light_lux"] = reading.light_lux;
-    doc["temperature_c"] = reading.temperature_c;
-    doc["humidity_pct"] = reading.humidity_pct;
-    doc["sequence"] = reading.sequence;
-
-    return serializeDocument(doc, payload_buf, payload_len, encoded_len);
-}
-
-bool encodeStatus(
-    const StatusMessage& status, uint8_t* payload_buf, size_t payload_len, size_t& encoded_len
-) {
-    StaticJsonDocument<STATUS_DOC_SIZE> doc;
-    doc["timestamp_ms"] = status.timestamp_ms;
-    doc["mode"] = static_cast<uint8_t>(status.mode);
-    doc["degraded_tier"] = static_cast<uint8_t>(status.degraded_tier);
-    doc["uptime_sec"] = status.uptime_sec;
-
-    JsonObject led_obj = doc.createNestedObject("led");
-    fillLedObject(led_obj, status.led);
-
-    return serializeDocument(doc, payload_buf, payload_len, encoded_len);
-}
-
-bool encodeEnergy(
-    const EnergyMessage& energy, uint8_t* payload_buf, size_t payload_len, size_t& encoded_len
-) {
-    StaticJsonDocument<ENERGY_DOC_SIZE> doc;
-    doc["timestamp_ms"] = energy.timestamp_ms;
-    doc["total_wh"] = energy.total_wh;
-    doc["session_wh"] = energy.session_wh;
-    doc["light_on_sec"] = energy.light_on_sec;
-    doc["max_brightness_sec"] = energy.max_brightness_sec;
-
-    return serializeDocument(doc, payload_buf, payload_len, encoded_len);
-}
-
-bool encodeAck(
-    const AckMessage& ack, uint8_t* payload_buf, size_t payload_len, size_t& encoded_len
-) {
-    StaticJsonDocument<ACK_DOC_SIZE> doc;
-    doc["command_id"] = ack.command_id.c_str();
-    doc["result"] = static_cast<uint8_t>(ack.result);
-    doc["timestamp_ms"] = ack.timestamp_ms;
-    doc["mode"] = static_cast<uint8_t>(ack.mode);
-    doc["reason"] = ackReasonText(ack.reason);
-
-    JsonObject led_obj = doc.createNestedObject("led");
-    fillLedObject(led_obj, ack.led);
-
-    return serializeDocument(doc, payload_buf, payload_len, encoded_len);
-}
-
-// PubSubClient passes a pointer into its own buffer, never NULL (PubSubClient.cpp:405, :416).
-// This exact match is the only place that maps a topic to a command kind.
-bool commandKindForTopic(const char* topic, CommandKind& out_kind) {
-    if (strcmp(topic, cmd_led_topic) == 0) {
-        out_kind = CommandKind::LED_CONTROL;
-        return true;
-    }
-
-    if (strcmp(topic, cmd_config_topic) == 0) {
-        out_kind = CommandKind::CONFIG_UPDATE;
-        return true;
-    }
-
-    if (strcmp(topic, cmd_mode_topic) == 0) {
-        out_kind = CommandKind::MODE_CHANGE;
-        return true;
-    }
-
-    return false;
-}
-
-bool setupSubscriptionsLocked() {
     if (!broker_client.connected()) {
         return false;
     }
 
-    const bool has_led = broker_client.subscribe(cmd_led_topic, MQTT_QOS_COMMAND);
-    const bool has_config = broker_client.subscribe(cmd_config_topic, MQTT_QOS_COMMAND);
-    const bool has_mode = broker_client.subscribe(cmd_mode_topic, MQTT_QOS_COMMAND);
-
-    return has_led && has_config && has_mode;
-}
-
-bool publishAvailabilityOnlineLocked() {
-    // Plain text, not MsgPack, to match the "offline" will message. Retained, so a client that
-    // subscribes later still sees the current state.
-    if (!broker_client.publish(availability_topic, kAvailabilityOnline, true)) {
-        ESP_LOGW(TAG, "publish failed %s", availability_topic);
+    if (!broker_client.publish(topic, payload, length, retained)) {
+        ESP_LOGW(TAG, "publish failed %s", topic);
         return false;
     }
 
     return true;
 }
 
-bool connectBrokerLocked() {
-    const bool was_connected = broker_client.connect(
-        client_id_buf, availability_topic, MQTT_QOS_STATUS, true, kAvailabilityOffline
-    );
+// retained, so a new dashboard tab shows values at once.
+template <typename Message, size_t Capacity>
+bool publishRetained(
+    const char* topic, const Message& message, size_t (*encode)(const Message&, uint8_t*, size_t)
+) {
+    uint8_t payload[Capacity] = {};
+    const size_t length = encode(message, payload, sizeof(payload));
+    if (length == 0U) {
+        ESP_LOGE(TAG, "encode failed for %s", topic);
+        return false;
+    }
 
-    if (!was_connected) {
+    return publishPayload(topic, payload, length, true);
+}
+
+struct ConnectWithAuth {
+    bool operator()(const X509Auth&) const {
+        return broker_client.connect(
+            client_id_buf, availability_topic, MQTT_QOS_STATUS, true, kAvailabilityOffline
+        );
+    }
+
+    bool operator()(const PasswordAuth& auth) const {
+        return broker_client.connect(
+            client_id_buf,
+            auth.username,
+            auth.password,
+            availability_topic,
+            MQTT_QOS_STATUS,
+            true,
+            kAvailabilityOffline
+        );
+    }
+};
+
+bool connectBrokerLocked() {
+    esp_task_wdt_reset();
+    if (!std::visit(ConnectWithAuth{}, cloud_config->auth)) {
         ESP_LOGW(TAG, "broker connect failed state=%d", broker_client.state());
         return false;
     }
 
-    if (!setupSubscriptionsLocked()) {
-        ESP_LOGW(TAG, "subscription setup failed");
-        broker_client.disconnect();
-        return false;
-    }
-
-    if (!publishAvailabilityOnlineLocked()) {
-        ESP_LOGW(TAG, "availability publish failed");
+    const bool subscribed = broker_client.subscribe(cmd_led_topic, MQTT_QOS_COMMAND) &&
+                            broker_client.subscribe(cmd_config_topic, MQTT_QOS_COMMAND) &&
+                            broker_client.subscribe(cmd_mode_topic, MQTT_QOS_COMMAND);
+    // plain text, not msgpack, to match the retained "offline" will message.
+    if (!subscribed || !broker_client.publish(availability_topic, kAvailabilityOnline, true)) {
+        ESP_LOGW(TAG, "subscribe or availability publish failed");
         broker_client.disconnect();
         return false;
     }
@@ -353,33 +240,28 @@ bool connectBrokerLocked() {
     return true;
 }
 
-// inbound_queue is created in init(), and connectOrPoll() returns before this when not initialized.
 void processInboundQueue() {
     InboundMessage msg = {};
     while (inbound_queue.receive(msg, 0)) {
         if (inbound_callback == nullptr) {
-            ESP_LOGE(
-                TAG,
-                "no inbound callback registered, dropped kind=%u",
-                static_cast<unsigned>(msg.kind)
-            );
+            ESP_LOGE(TAG, "no inbound callback, dropped kind=%u", static_cast<unsigned>(msg.kind));
             continue;
         }
 
-        inbound_callback(msg.kind, msg.payload, msg.length);
+        inbound_callback(CommandSource::CLOUD, msg.kind, msg.payload, msg.length);
     }
 }
 
-static_assert(COMMAND_DOC_SIZE <= UINT16_MAX, "InboundMessage::length is uint16_t");
-
-// Runs inside broker_client.loop(), which connectOrPoll() calls only after init().
+// runs inside broker_client.loop(); pubsubclient passes a pointer into its own buffer.
 void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
+    const size_t prefix_len = strlen(topic_prefix);
     InboundMessage msg = {};
-    if (!commandKindForTopic(topic, msg.kind)) {
+    if (strncmp(topic, topic_prefix, prefix_len) != 0 ||
+        !WireCodec::commandKindForSuffix(topic + prefix_len, msg.kind)) {
         return;
     }
 
-    if (length == 0U || length > COMMAND_DOC_SIZE) {
+    if (length == 0U || length > sizeof(msg.payload)) {
         ESP_LOGW(TAG, "command payload invalid");
         return;
     }
@@ -391,34 +273,36 @@ void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
         ESP_LOGW(TAG, "inbound queue full, dropped topic=%s len=%u", topic, msg.length);
     }
 }
+
+void configureTls(const CloudConfig& config) {
+    secure_client.setCACert(config.ca_pem);
+    if (const X509Auth* x509 = std::get_if<X509Auth>(&config.auth)) {
+        secure_client.setCertificate(x509->cert_pem);
+        secure_client.setPrivateKey(x509->key_pem);
+    }
+    secure_client.setTimeout(CONNECT_TIMEOUT_SEC);
+    secure_client.setHandshakeTimeout(CONNECT_TIMEOUT_SEC);
+}
 }  // namespace
 
 namespace MqttClient {
-bool init(const char* device_id, Client& net_client, WifiConnectedFn wifi_connected) {
-    if (!hasText(device_id)) {
-        ESP_LOGE(TAG, "device id missing");
-        return false;
-    }
-
-    if (wifi_connected == nullptr) {
-        ESP_LOGE(TAG, "wifi callback missing");
+bool init(
+    const char* device_id,
+    const CloudConfig& config,
+    Client& net_client,
+    WifiConnectedFn wifi_connected
+) {
+    if (device_id == nullptr || device_id[0] == '\0' || wifi_connected == nullptr) {
+        ESP_LOGE(TAG, "device id or wifi callback missing");
         return false;
     }
 
     ensureInfrastructure();
 
-    if (!copyText(device_id_buf, sizeof(device_id_buf), device_id)) {
-        ESP_LOGE(TAG, "device id too long");
+    if (!copyText(device_id_buf, sizeof(device_id_buf), device_id) || !buildTopics()) {
+        ESP_LOGE(TAG, "device id too long for topics");
         return false;
     }
-
-    if (!buildClientId() || !buildTopics()) {
-        ESP_LOGE(TAG, "topic init failed");
-        return false;
-    }
-
-    network_client = &net_client;
-    wifi_connected_fn = wifi_connected;
 
     LockGuard lock(mqtt_mutex);
     if (!lock.locked()) {
@@ -430,9 +314,12 @@ bool init(const char* device_id, Client& net_client, WifiConnectedFn wifi_connec
         broker_client.disconnect();
     }
 
-    broker_client.setClient(*network_client);
-    broker_client.setServer(MQTT_BROKER_HOST, MQTT_BROKER_PORT);
+    cloud_config = &config;
+    wifi_connected_fn = wifi_connected;
+    broker_client.setClient(net_client);
+    broker_client.setServer(config.endpoint, config.port);
     broker_client.setKeepAlive(MQTT_KEEPALIVE_SEC);
+    broker_client.setSocketTimeout(CONNECT_TIMEOUT_SEC);
     broker_client.setCallback(mqttCallback);
 
     if (!broker_client.setBufferSize(MQTT_PACKET_BUFFER_SIZE)) {
@@ -442,19 +329,28 @@ bool init(const char* device_id, Client& net_client, WifiConnectedFn wifi_connec
 
     inbound_queue.reset();
     resetReconnectState();
-    is_initialized = true;
+    cloud_state.store(CloudState::CONNECTING);
 
-    ESP_LOGI(TAG, "mqtt initialized for %s", device_id_buf);
+    ESP_LOGI(TAG, "mqtt initialized for %s at %s:%u", device_id_buf, config.endpoint, config.port);
     return true;
 }
 
-bool init(const char* device_id) {
-    return init(device_id, default_wifi_client, defaultWifiConnected);
+bool init(const char* device_id, const CloudConfig& config) {
+    if (config.ca_pem[0] == '\0') {
+        ESP_LOGW(TAG, "cloud config without tls, use only on a trusted lan");
+        return init(device_id, config, plain_client, defaultWifiConnected);
+    }
+
+    configureTls(config);
+    return init(device_id, config, secure_client, defaultWifiConnected);
 }
 
+void disable(CloudState reason) { cloud_state.store(reason); }
+
+CloudState state() { return cloud_state.load(); }
+
 bool connectOrPoll() {
-    if (!is_initialized || wifi_connected_fn == nullptr) {
-        ESP_LOGW(TAG, "poll before init");
+    if (!isEnabled()) {
         return false;
     }
 
@@ -463,11 +359,12 @@ bool connectOrPoll() {
         if (lock.locked() && broker_client.connected()) {
             broker_client.disconnect();
         }
+        cloud_state.store(CloudState::CONNECTING);
         resetReconnectState();
-        processInboundQueue();
         return false;
     }
 
+    bool connected = false;
     {
         LockGuard lock(mqtt_mutex);
         if (!lock.locked()) {
@@ -475,103 +372,50 @@ bool connectOrPoll() {
             return false;
         }
 
-        if (broker_client.connected()) {
-            broker_client.loop();
+        connected = broker_client.connected() && broker_client.loop();
+        const uint64_t now_ms = getNowMs();
+        if (!connected && now_ms >= next_connect_ms) {
+            connected = connectBrokerLocked();
+            if (!connected) {
+                scheduleReconnect(now_ms);
+            }
         }
     }
 
     processInboundQueue();
-
-    {
-        LockGuard lock(mqtt_mutex);
-        if (!lock.locked()) {
-            ESP_LOGW(TAG, "state lock timeout");
-            return false;
-        }
-
-        if (broker_client.connected()) {
-            return true;
-        }
-    }
-
-    const uint64_t now_ms = getNowMs();
-    if (now_ms < next_connect_ms) {
-        return false;
-    }
-
-    {
-        LockGuard lock(mqtt_mutex);
-        if (!lock.locked()) {
-            ESP_LOGW(TAG, "connect lock timeout");
-            return false;
-        }
-
-        if (broker_client.connected()) {
-            return true;
-        }
-
-        if (!connectBrokerLocked()) {
-            scheduleReconnect(now_ms);
-            return false;
-        }
-    }
-
-    return true;
+    cloud_state.store(connected ? CloudState::CONNECTED : CloudState::CONNECTING);
+    return connected;
 }
 
 bool publishTelemetry(const SensorReading& reading) {
-    uint8_t payload_buf[TELEMETRY_DOC_SIZE] = {};
-    size_t encoded_len = 0;
-
-    if (!encodeTelemetry(reading, payload_buf, sizeof(payload_buf), encoded_len)) {
-        ESP_LOGW(TAG, "telemetry encode failed");
-        return false;
-    }
-
-    return publishPayload(telemetry_topic, payload_buf, encoded_len);
+    return publishRetained<SensorReading, TELEMETRY_PAYLOAD_MAX>(
+        telemetry_topic, reading, WireCodec::encodeTelemetry
+    );
 }
 
 bool publishStatus(const StatusMessage& status) {
-    uint8_t payload_buf[STATUS_DOC_SIZE] = {};
-    size_t encoded_len = 0;
-
-    if (!encodeStatus(status, payload_buf, sizeof(payload_buf), encoded_len)) {
-        ESP_LOGW(TAG, "status encode failed");
-        return false;
-    }
-
-    return publishPayload(status_topic, payload_buf, encoded_len);
+    return publishRetained<StatusMessage, STATUS_PAYLOAD_MAX>(
+        status_topic, status, WireCodec::encodeStatus
+    );
 }
 
 bool publishEnergy(const EnergyMessage& energy) {
-    uint8_t payload_buf[ENERGY_DOC_SIZE] = {};
-    size_t encoded_len = 0;
-
-    if (!encodeEnergy(energy, payload_buf, sizeof(payload_buf), encoded_len)) {
-        ESP_LOGW(TAG, "energy encode failed");
-        return false;
-    }
-
-    return publishPayload(energy_topic, payload_buf, encoded_len);
+    return publishRetained<EnergyMessage, ENERGY_PAYLOAD_MAX>(
+        energy_topic, energy, WireCodec::encodeEnergy
+    );
 }
 
 bool publishAck(const AckMessage& ack) {
-    uint8_t payload_buf[ACK_DOC_SIZE] = {};
+    uint8_t payload[ACK_PAYLOAD_MAX] = {};
     char ack_topic[ACK_TOPIC_LEN] = {};
-    size_t encoded_len = 0;
-
-    if (!buildAckTopic(ack_topic, sizeof(ack_topic), ack.command_id)) {
-        ESP_LOGW(TAG, "ack topic build failed");
-        return false;
-    }
-
-    if (!encodeAck(ack, payload_buf, sizeof(payload_buf), encoded_len)) {
+    const size_t length = WireCodec::encodeAck(ack, payload, sizeof(payload));
+    if (length == 0U || !buildAckTopic(ack_topic, sizeof(ack_topic), ack.command_id)) {
         ESP_LOGW(TAG, "ack encode failed");
         return false;
     }
 
-    return publishPayload(ack_topic, payload_buf, encoded_len);
+    return publishPayload(ack_topic, payload, length, false);
 }
 
-void registerInboundCallback(MqttInboundCallback callback) { inbound_callback = callback; }
+void registerInboundCallback(InboundCommandFn callback) { inbound_callback = callback; }
 }  // namespace MqttClient

@@ -7,7 +7,7 @@
 #include <stdio.h>
 
 #include "lumen_board_config.h"
-#include "lumen_secrets.h"
+#include "lumen_config_manager.h"
 #include "lumen_system_utils.h"
 
 namespace {
@@ -21,6 +21,8 @@ static uint8_t failure_count = 0;
 static uint32_t backoff_ms = WIFI_BACKOFF_BASE_MS;
 static uint64_t next_attempt_ms = 0;
 static uint64_t connect_deadline_ms = 0;
+static std::optional<ValidWifiCredentials> credentials;
+static char hostname_buf[32] = {};
 
 void resetState() {
     degraded_tier = DegradedTier::NONE;
@@ -53,7 +55,7 @@ bool buildHostname(char* hostname, size_t hostname_len) {
 }
 
 void startConnectionAttempt(uint64_t now_ms) {
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    WiFi.begin(credentials->ssid(), credentials->password());
     connection_in_progress = true;
     connect_deadline_ms = now_ms + WIFI_STA_CONNECT_TIMEOUT_MS;
 }
@@ -83,7 +85,8 @@ void logConnectionChange(bool is_connected) {
     was_connected = is_connected;
 
     if (was_connected) {
-        ESP_LOGI(TAG, "wifi connected");
+        ESP_LOGI(TAG, "wifi connected, ip %s", WiFi.localIP().toString().c_str());
+        ConfigManager::markWifiConnected();
     } else {
         ESP_LOGW(TAG, "wifi disconnected");
     }
@@ -92,8 +95,6 @@ void logConnectionChange(bool is_connected) {
 
 namespace WifiManager {
 bool init() {
-    char hostname[32] = {};
-
     WiFi.persistent(false);
 
     const bool mode_ok = WiFi.mode(WIFI_STA);
@@ -102,8 +103,7 @@ bool init() {
         return false;
     }
 
-    const bool has_hostname = buildHostname(hostname, sizeof(hostname));
-    if (has_hostname && !WiFi.setHostname(hostname)) {
+    if (!WiFi.setHostname(hostname())) {
         ESP_LOGW(TAG, "hostname set failed");
     }
 
@@ -112,16 +112,29 @@ bool init() {
     WiFi.disconnect(false, false);
 
     resetState();
-    startConnectionAttempt(getNowMs());
+    credentials = ConfigManager::loadWifiCredentials();
     is_initialized = true;
 
+    if (!credentials) {
+        ESP_LOGW(TAG, "no wifi details saved, running offline");
+        return true;
+    }
+
+    startConnectionAttempt(getNowMs());
     ESP_LOGI(TAG, "wifi init started");
     return true;
 }
 
+const char* hostname() {
+    if (hostname_buf[0] == '\0' && !buildHostname(hostname_buf, sizeof(hostname_buf))) {
+        copyText(hostname_buf, sizeof(hostname_buf), "lumen");
+    }
+
+    return hostname_buf;
+}
+
 bool connectOrPoll() {
-    if (!is_initialized) {
-        ESP_LOGW(TAG, "poll before init");
+    if (!is_initialized || !credentials) {
         return false;
     }
 

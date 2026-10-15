@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "lumen_board_config.h"
 #include "lumen_system_utils.h"
 #include "lumen_type_validation.h"
 
@@ -18,6 +19,12 @@ static const char* NVS_NAMESPACE = "lumen";
 
 static const char* KEY_RUNTIME_CFG = "runtime_cfg";
 static const char* KEY_ENERGY_WH = "energy_wh";
+// own key: the runtime blob has no version field, so a new field there breaks saved configs.
+static const char* KEY_LUX_CEILING = "lux_ceiling";
+static const char* KEY_WIFI_SSID = "wifi_ssid";
+static const char* KEY_WIFI_PASSWORD = "wifi_pass";
+static const char* KEY_LOCAL_HASH = "local_hash";
+static const char* KEY_WIFI_CONNECTED = "wifi_ok";
 
 struct PersistedRuntimeConfig {
     char device_id[DEVICE_ID_MAX_LEN];
@@ -53,6 +60,7 @@ RuntimeConfig buildDefaultConfig() {
         ValidThresholds::parse(DEFAULT_THRESHOLDS).value(),
         ValidLedState::parse(DEFAULT_LED_STATE).value(),
         EnergyTotalWh::parse(DEFAULT_ENERGY_TOTAL_WH).value(),
+        ValidLuxCeiling::parse(DEFAULT_LUX_CEILING).value(),
     };
 }
 
@@ -199,14 +207,44 @@ bool loadRuntimeConfigBlob(RuntimeConfig& config) {
     return true;
 }
 
-// Caller holds the config lock. RAM changes only after the NVS write succeeds.
+bool writeLuxCeiling(ValidLuxCeiling lux_ceiling) {
+    if (!has_nvs) {
+        ESP_LOGW(TAG, "nvs unavailable");
+        return false;
+    }
+
+    if (preferences.putFloat(KEY_LUX_CEILING, lux_ceiling.raw()) == 0U) {
+        ESP_LOGE(TAG, "lux ceiling write failed");
+        return false;
+    }
+
+    return true;
+}
+
+// caller holds the config lock. ram changes only after the nvs writes succeed.
 bool commitRuntimeConfigLocked(const RuntimeConfig& next) {
+    const bool lux_changed = next.lux_ceiling.raw() != runtime_config.lux_ceiling.raw();
+    if (lux_changed && !writeLuxCeiling(next.lux_ceiling)) {
+        return false;
+    }
+
     if (!writeRuntimeConfigBlob(next)) {
         return false;
     }
 
     runtime_config = next;
     return true;
+}
+
+void loadLuxCeiling(RuntimeConfig& config) {
+    const float stored = preferences.getFloat(KEY_LUX_CEILING, config.lux_ceiling.raw());
+
+    const std::optional<ValidLuxCeiling> lux_ceiling = ValidLuxCeiling::parse(stored);
+    if (lux_ceiling) {
+        config.lux_ceiling = *lux_ceiling;
+    } else {
+        ESP_LOGW(TAG, "invalid lux ceiling in nvs, using default");
+    }
 }
 
 void loadEnergyTotal(RuntimeConfig& config) {
@@ -236,6 +274,7 @@ bool init() {
 
     loadRuntimeConfigBlob(runtime_config);
     loadEnergyTotal(runtime_config);
+    loadLuxCeiling(runtime_config);
 
     is_initialized = true;
     ESP_LOGI(TAG, "config loaded for %s", runtime_config.device_id);
@@ -255,6 +294,7 @@ bool loadDefaults() {
 
     bool ok = writeRuntimeConfigBlob(runtime_config);
     ok &= writeEnergyTotal(runtime_config.energy_total_wh);
+    ok &= writeLuxCeiling(runtime_config.lux_ceiling);
     unlockConfig();
     return ok;
 }
@@ -311,8 +351,54 @@ bool saveRuntimeConfig(const RuntimeConfig& config) {
     next.mode = config.mode;
     next.thresholds = config.thresholds;
     next.led = config.led;
+    next.lux_ceiling = config.lux_ceiling;
     const bool ok = commitRuntimeConfigLocked(next);
     unlockConfig();
     return ok;
+}
+
+bool saveSetup(const ValidWifiCredentials& credentials, const LocalPasswordHash& password_hash) {
+    lockConfig();
+    const bool ok = has_nvs && preferences.putString(KEY_WIFI_SSID, credentials.ssid()) > 0U &&
+                    preferences.putString(KEY_WIFI_PASSWORD, credentials.password()) ==
+                        strlen(credentials.password()) &&
+                    preferences.putString(KEY_LOCAL_HASH, password_hash.c_str()) > 0U &&
+                    preferences.putBool(KEY_WIFI_CONNECTED, false) > 0U;
+    unlockConfig();
+
+    if (!ok) {
+        ESP_LOGE(TAG, "setup save failed");
+    }
+    return ok;
+}
+
+std::optional<ValidWifiCredentials> loadWifiCredentials() {
+    lockConfig();
+    const String ssid = has_nvs ? preferences.getString(KEY_WIFI_SSID, "") : String();
+    const String password = has_nvs ? preferences.getString(KEY_WIFI_PASSWORD, "") : String();
+    unlockConfig();
+    return ValidWifiCredentials::parse(ssid.c_str(), password.c_str());
+}
+
+std::optional<LocalPasswordHash> loadLocalPasswordHash() {
+    lockConfig();
+    const String hash = has_nvs ? preferences.getString(KEY_LOCAL_HASH, "") : String();
+    unlockConfig();
+    return LocalPasswordHash::parse(hash.c_str());
+}
+
+bool wifiHasConnected() {
+    lockConfig();
+    const bool connected = has_nvs && preferences.getBool(KEY_WIFI_CONNECTED, false);
+    unlockConfig();
+    return connected;
+}
+
+void markWifiConnected() {
+    lockConfig();
+    if (has_nvs && !preferences.getBool(KEY_WIFI_CONNECTED, false)) {
+        preferences.putBool(KEY_WIFI_CONNECTED, true);
+    }
+    unlockConfig();
 }
 }  // namespace ConfigManager

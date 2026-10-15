@@ -3,6 +3,8 @@
 #include <math.h>
 #include <string.h>
 
+#include "lumen_board_config.h"
+
 namespace {
 bool isCommandIdChar(char value) {
     const bool is_lower = (value >= 'a') && (value <= 'z');
@@ -52,6 +54,54 @@ std::optional<EnergyTotalWh> EnergyTotalWh::parse(float raw_wh) {
     }
 
     return EnergyTotalWh(raw_wh);
+}
+
+std::optional<ValidLuxCeiling> ValidLuxCeiling::parse(float raw_lux) {
+    if (!isfinite(raw_lux) || raw_lux < LUX_CEILING_MIN || raw_lux > LUX_CEILING_MAX) {
+        return std::nullopt;
+    }
+
+    return ValidLuxCeiling(raw_lux);
+}
+
+std::optional<ValidWifiCredentials> ValidWifiCredentials::parse(
+    const char* ssid, const char* password
+) {
+    if (ssid == nullptr || password == nullptr) {
+        return std::nullopt;
+    }
+
+    const size_t ssid_len = strlen(ssid);
+    const size_t password_len = strlen(password);
+    const bool ssid_ok = (ssid_len > 0U) && (ssid_len <= WIFI_SSID_MAX_LEN);
+    const bool password_ok =
+        (password_len == 0U) || (password_len >= 8U && password_len <= WIFI_PASSWORD_MAX_LEN);
+    if (!ssid_ok || !password_ok) {
+        return std::nullopt;
+    }
+
+    ValidWifiCredentials credentials;
+    memcpy(credentials.ssid_, ssid, ssid_len);
+    memcpy(credentials.password_, password, password_len);
+    return credentials;
+}
+
+std::optional<LocalPasswordHash> LocalPasswordHash::parse(const char* hex) {
+    if (hex == nullptr || strlen(hex) != LOCAL_PASSWORD_HASH_LEN) {
+        return std::nullopt;
+    }
+
+    for (size_t index = 0; index < LOCAL_PASSWORD_HASH_LEN; ++index) {
+        const char value = hex[index];
+        const bool is_hex = (value >= '0' && value <= '9') || (value >= 'a' && value <= 'f');
+        if (!is_hex) {
+            return std::nullopt;
+        }
+    }
+
+    LocalPasswordHash hash;
+    memcpy(hash.hex_, hex, LOCAL_PASSWORD_HASH_LEN);
+    return hash;
 }
 
 bool parseDeviceMode(uint8_t raw_mode, DeviceMode& out_mode) {

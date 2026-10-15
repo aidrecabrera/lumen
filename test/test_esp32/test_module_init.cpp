@@ -3,6 +3,8 @@
 #include <unity.h>
 
 #include "lumen_app_types.h"
+#include "lumen_board_config.h"
+#include "lumen_cloud_config.h"
 #include "lumen_config_manager.h"
 #include "lumen_energy_tracker.h"
 #include "lumen_led_control.h"
@@ -86,6 +88,30 @@ static void prepareLedControl(DeviceMode initial_mode) {
     TEST_ASSERT_TRUE(LedControl::init());
 }
 
+// plain tcp to a local address: these tests check init and publish guards, not a broker.
+static const CloudConfig& testCloudConfig() {
+    static CloudConfig config = [] {
+        CloudConfig built{};
+        std::strcpy(built.endpoint, "127.0.0.1");
+        built.port = 1883;
+        PasswordAuth& auth = built.auth.emplace<PasswordAuth>();
+        std::strcpy(auth.username, "test");
+        std::strcpy(auth.password, "test");
+        return built;
+    }();
+    return config;
+}
+
+static SensorReading makeReading(float light_lux, float temperature_c) {
+    SensorReading reading{};
+    reading.timestamp_ms = 1U;
+    reading.light_lux = light_lux;
+    reading.temperature_c = temperature_c;
+    reading.humidity_pct = 55.0f;
+    reading.sequence = 1U;
+    return reading;
+}
+
 static void prepareEnergyTracker(float starting_total_wh) {
     TEST_ASSERT_TRUE(ConfigManager::init());
     TEST_ASSERT_TRUE(ConfigManager::loadDefaults());
@@ -103,18 +129,18 @@ void test_energy_requestPersist_before_init_fails() {
 }
 
 void test_mqtt_init_rejects_null_device_id() {
-    TEST_ASSERT_FALSE(MqttClient::init(nullptr));
+    TEST_ASSERT_FALSE(MqttClient::init(nullptr, testCloudConfig()));
 }
 
 void test_mqtt_init_rejects_empty_device_id() {
-    TEST_ASSERT_FALSE(MqttClient::init(""));
+    TEST_ASSERT_FALSE(MqttClient::init("", testCloudConfig()));
 }
 
 void test_mqtt_init_rejects_oversized_device_id() {
     char oversized[DEVICE_ID_MAX_LEN + 2U];
     std::memset(oversized, 'x', sizeof(oversized));
     oversized[sizeof(oversized) - 1U] = '\0';
-    TEST_ASSERT_FALSE(MqttClient::init(oversized));
+    TEST_ASSERT_FALSE(MqttClient::init(oversized, testCloudConfig()));
 }
 
 void test_mqtt_publish_functions_fail_before_connect() {
@@ -123,7 +149,7 @@ void test_mqtt_publish_functions_fail_before_connect() {
     EnergyMessage energy{};
     AckMessage ack{};
 
-    TEST_ASSERT_TRUE(MqttClient::init("testnode"));
+    TEST_ASSERT_TRUE(MqttClient::init("testnode", testCloudConfig()));
     TEST_ASSERT_FALSE(MqttClient::publishTelemetry(reading));
     TEST_ASSERT_FALSE(MqttClient::publishStatus(status));
     TEST_ASSERT_FALSE(MqttClient::publishEnergy(energy));
@@ -196,16 +222,14 @@ void test_led_control_buildStatusMessage_reflects_runtime_state() {
         static_cast<uint8_t>(ack.result)
     );
 
-    const StatusMessage status = LedControl::buildStatusMessage(DegradedTier::WIFI_RETRY_LIMIT);
+    const StatusMessage status = LedControl::buildStatusMessage();
 
     TEST_ASSERT_EQUAL_UINT8(
         static_cast<uint8_t>(DeviceMode::MANUAL),
         static_cast<uint8_t>(status.mode)
     );
-    TEST_ASSERT_EQUAL_UINT8(
-        static_cast<uint8_t>(DegradedTier::WIFI_RETRY_LIMIT),
-        static_cast<uint8_t>(status.degraded_tier)
-    );
+    TEST_ASSERT_EQUAL_FLOAT(makeValidThresholds().temp_max_c, status.thresholds.temp_max_c);
+    TEST_ASSERT_EQUAL_FLOAT(DEFAULT_LUX_CEILING, status.lux_ceiling);
     assertLedEqual(desired, status.led);
 }
 
@@ -213,17 +237,69 @@ void test_led_control_autonomous_holds_brightness_outside_thresholds() {
     prepareLedControl(DeviceMode::AUTONOMOUS);
     const LedState before = LedControl::getCurrentLedState();
 
-    SensorReading reading{};
-    reading.timestamp_ms = 1U;
-    reading.light_lux = 5000.0f;
-    reading.temperature_c = 35.0f;
-    reading.humidity_pct = 55.0f;
-    reading.sequence = 1U;
-
-    LedControl::controlTick(reading);
+    TEST_ASSERT_TRUE(LedControl::controlTick(makeReading(5000.0f, 35.0f)));
 
     const LedState after = LedControl::getCurrentLedState();
     assertLedEqual(before, after);
+    TEST_ASSERT_EQUAL_UINT8(
+        static_cast<uint8_t>(AutoState::PAUSED_OUT_OF_RANGE),
+        static_cast<uint8_t>(LedControl::buildStatusMessage().auto_state)
+    );
+}
+
+void test_led_control_autonomous_night_off_turns_lights_off() {
+    prepareLedControl(DeviceMode::AUTONOMOUS);
+
+    TEST_ASSERT_TRUE(LedControl::controlTick(makeReading(5.0f, 22.0f)));
+
+    const StatusMessage status = LedControl::buildStatusMessage();
+    TEST_ASSERT_EQUAL_UINT8(0U, status.led.brightness_pct);
+    TEST_ASSERT_TRUE(status.led.power);
+    TEST_ASSERT_EQUAL_UINT8(
+        static_cast<uint8_t>(AutoState::NIGHT_OFF), static_cast<uint8_t>(status.auto_state)
+    );
+    TEST_ASSERT_FALSE(LedControl::controlTick(makeReading(15.0f, 22.0f)));
+}
+
+void test_led_control_ack_returns_on_command_source() {
+    prepareLedControl(DeviceMode::MANUAL);
+
+    CommandEnvelope local = makeModeCommand("ack-route-local", DeviceMode::MANUAL);
+    local.source = CommandSource::LOCAL;
+    TEST_ASSERT_EQUAL_UINT8(
+        static_cast<uint8_t>(CommandSource::LOCAL),
+        static_cast<uint8_t>(LedControl::applyCommand(local).source)
+    );
+
+    const CommandEnvelope cloud = makeModeCommand("ack-route-cloud", DeviceMode::MANUAL);
+    TEST_ASSERT_EQUAL_UINT8(
+        static_cast<uint8_t>(CommandSource::CLOUD),
+        static_cast<uint8_t>(LedControl::applyCommand(cloud).source)
+    );
+
+    const AckMessage rejected = LedControl::buildRejectedAck(
+        local.command_id, CommandSource::LOCAL, AckReason::INVALID_PAYLOAD
+    );
+    TEST_ASSERT_EQUAL_UINT8(
+        static_cast<uint8_t>(CommandSource::LOCAL), static_cast<uint8_t>(rejected.source)
+    );
+}
+
+void test_led_control_config_command_sets_lux_ceiling() {
+    prepareLedControl(DeviceMode::AUTONOMOUS);
+
+    CommandEnvelope cmd{};
+    TEST_ASSERT_TRUE(parseCommandId("cfg-lux", std::strlen("cfg-lux"), cmd.command_id));
+    cmd.payload = ConfigCommand{
+        requireValidThresholds(makeValidThresholds()), ValidLuxCeiling::parse(2000.0f)
+    };
+
+    TEST_ASSERT_EQUAL_UINT8(
+        static_cast<uint8_t>(AckResult::APPLIED),
+        static_cast<uint8_t>(LedControl::applyCommand(cmd).result)
+    );
+    TEST_ASSERT_EQUAL_FLOAT(2000.0f, LedControl::buildStatusMessage().lux_ceiling);
+    TEST_ASSERT_EQUAL_FLOAT(2000.0f, ConfigManager::getConfigSnapshot().lux_ceiling.raw());
 }
 
 void test_energy_tracker_init_succeeds() {
@@ -276,5 +352,5 @@ void test_wifi_manager_init_succeeds() {
 }
 
 void test_mqtt_client_init_with_valid_device_id_succeeds() {
-    TEST_ASSERT_TRUE(MqttClient::init("testnode"));
+    TEST_ASSERT_TRUE(MqttClient::init("testnode", testCloudConfig()));
 }

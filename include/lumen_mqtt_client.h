@@ -3,21 +3,28 @@
 #include <Client.h>
 
 #include "lumen_app_types.h"
+#include "lumen_cloud_config.h"
 
-// kind comes from an exact match on one of the subscribed command topics.
-using MqttInboundCallback = void (*)(CommandKind kind, const uint8_t* payload, uint16_t length);
 using WifiConnectedFn = bool (*)();
 
 namespace MqttClient {
 
-bool init(const char* device_id);
-bool init(const char* device_id, Client& net_client, WifiConnectedFn wifi_connected);
+// config must outlive the client: the tls client keeps pointers into its pem strings.
+bool init(const char* device_id, const CloudConfig& config);
+bool init(
+    const char* device_id,
+    const CloudConfig& config,
+    Client& net_client,
+    WifiConnectedFn wifi_connected
+);
+void disable(CloudState reason);
+CloudState state();
 
 bool connectOrPoll();
 bool publishTelemetry(const SensorReading& reading);
 bool publishStatus(const StatusMessage& status);
 bool publishEnergy(const EnergyMessage& energy);
 bool publishAck(const AckMessage& ack);
-void registerInboundCallback(MqttInboundCallback callback);
+void registerInboundCallback(InboundCommandFn callback);
 
 }  // namespace MqttClient

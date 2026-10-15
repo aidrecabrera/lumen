@@ -1,0 +1,7 @@
+# Name,   Type, SubType,  Offset,   Size,     Flags
+# one app slot: over-the-air updates are not used, and tls, the web server and the setup
+# portal need more than the 1.25 MB slot of default_ffat.csv. nvs keeps its offset.
+nvs,      data, nvs,      0x9000,   0x5000,
+app0,     app,  factory,  0x10000,  0x200000,
+ffat,     data, fat,      0x210000, 0x1E0000,
+coredump, data, coredump, 0x3F0000, 0x10000,

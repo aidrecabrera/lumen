@@ -17,6 +17,9 @@ void test_led_control_mode_change_command_applies();
 void test_led_control_accepts_valid_led_command_in_manual_mode();
 void test_led_control_buildStatusMessage_reflects_runtime_state();
 void test_led_control_autonomous_holds_brightness_outside_thresholds();
+void test_led_control_autonomous_night_off_turns_lights_off();
+void test_led_control_ack_returns_on_command_source();
+void test_led_control_config_command_sets_lux_ceiling();
 void test_energy_tracker_init_succeeds();
 void test_energy_tracker_init_resets_session_counters();
 void test_energy_tracker_led_off_does_not_increase_session_energy();
@@ -95,6 +98,9 @@ void setup() {
     RUN_TEST(test_led_control_accepts_valid_led_command_in_manual_mode);
     RUN_TEST(test_led_control_buildStatusMessage_reflects_runtime_state);
     RUN_TEST(test_led_control_autonomous_holds_brightness_outside_thresholds);
+    RUN_TEST(test_led_control_autonomous_night_off_turns_lights_off);
+    RUN_TEST(test_led_control_ack_returns_on_command_source);
+    RUN_TEST(test_led_control_config_command_sets_lux_ceiling);
 
     RUN_TEST(test_energy_tracker_init_succeeds);
     RUN_TEST(test_energy_tracker_init_resets_session_counters);

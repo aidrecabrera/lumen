@@ -23,4 +23,7 @@ DecodeStatus decode(
     CommandKind kind, const uint8_t* payload, uint16_t length, CommandEnvelope& out_command
 );
 
+// for a frame of unknown kind, so it can still get a rejected ack.
+bool readCommandId(const uint8_t* payload, uint16_t length, CommandId& out_command_id);
+
 }  // namespace CommandHandler
