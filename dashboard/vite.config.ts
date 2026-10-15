@@ -1,7 +1,8 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
-const TARGETS = ["local", "aws", "emqx", "dev", "fake"] as const;
+// "node" is the copy the node serves; vite reserves "local" for .env.*.local files.
+const TARGETS = ["node", "aws", "emqx", "dev", "fake"] as const;
 
 type Target = (typeof TARGETS)[number];
 

@@ -32,7 +32,10 @@ export function describeTransportContract(name: string, setUp: () => Promise<Tra
       const { transport, node } = await setUp();
       const messages: { suffix: string; payload: Uint8Array; retained: boolean }[] = [];
 
-      transport.onMessage((suffix, payload, retained) => messages.push({ suffix, payload, retained }));
+      // the local transport reports the node online by itself, so availability is left out here.
+      transport.onMessage((suffix, payload, retained) => {
+        if (suffix !== "availability") messages.push({ suffix, payload, retained });
+      });
       await node.publish("status", fixtures.files["status.msgpack"], true);
       await transport.connect();
       await node.settle();
