@@ -3,8 +3,21 @@ import { nothing } from "lit-html";
 import { expect, it } from "vitest";
 
 import { FakeTransport } from "../src/transport/fake.ts";
-import { Dashboard } from "../src/ui/dashboard.ts";
 import * as fixtures from "../scripts/fixtures.ts";
+
+// jsdom lacks matchMedia, which uplot reads when it loads.
+window.matchMedia = (query: string): MediaQueryList => ({
+  media: query,
+  matches: false,
+  onchange: null,
+  addListener: () => undefined,
+  removeListener: () => undefined,
+  addEventListener: () => undefined,
+  removeEventListener: () => undefined,
+  dispatchEvent: () => false,
+});
+
+const { Dashboard } = await import("../src/ui/dashboard.ts");
 
 it("renders the live dashboard with no axe violations", async () => {
   const root = document.createElement("main");

@@ -9,6 +9,7 @@ describeTransportContract("fake", async () => {
     transport,
     node: {
       publish: async (suffix, payload, retained) => transport.deliver(suffix, payload, retained),
+      settle: async () => undefined,
       received: async () => {
         const { suffix, commandId, command } = transport.lastCommand();
 

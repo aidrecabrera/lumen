@@ -7,6 +7,7 @@ import * as fixtures from "../scripts/fixtures.ts";
 export interface NodeSide {
   publish(suffix: string, payload: Uint8Array, retained: boolean): Promise<void>;
   received(): Promise<{ suffix: string; payload: Uint8Array }>;
+  settle(): Promise<void>;
 }
 
 export interface TransportHarness {
@@ -27,20 +28,20 @@ export function describeTransportContract(name: string, setUp: () => Promise<Tra
       transport.disconnect();
     });
 
-    it("delivers node messages with their suffix and retain flag", async () => {
+    it("delivers the stored status on connect, then live messages", async () => {
       const { transport, node } = await setUp();
       const messages: { suffix: string; payload: Uint8Array; retained: boolean }[] = [];
 
       transport.onMessage((suffix, payload, retained) => messages.push({ suffix, payload, retained }));
-      await transport.connect();
-      await node.publish("telemetry", fixtures.files["telemetry.msgpack"], false);
       await node.publish("status", fixtures.files["status.msgpack"], true);
+      await transport.connect();
+      await node.settle();
+      await node.publish("telemetry", fixtures.files["telemetry.msgpack"], false);
+      await node.settle();
 
-      expect(messages.map(({ suffix, retained }) => ({ suffix, retained }))).toEqual([
-        { suffix: "telemetry", retained: false },
-        { suffix: "status", retained: true },
-      ]);
-      expect(Array.from(messages[0]?.payload ?? [])).toEqual(Array.from(fixtures.files["telemetry.msgpack"]));
+      expect(messages.map(({ suffix }) => suffix)).toEqual(["status", "telemetry"]);
+      expect(messages[1]?.retained).toBe(false);
+      expect(Array.from(messages[1]?.payload ?? [])).toEqual(Array.from(fixtures.files["telemetry.msgpack"]));
       transport.disconnect();
     });
 
