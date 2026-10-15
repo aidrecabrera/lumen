@@ -61,7 +61,7 @@ make deploy-fallback
 ## 4. Remove the AWS path
 
 ```sh
-make teardown DEVICE_ID=lumen-<id> BUDGET_EMAIL=<email>
+make teardown DEVICE_ID=lumen-<id>
 ```
 
 ## 5. Tell the users

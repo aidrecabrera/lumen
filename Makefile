@@ -52,7 +52,7 @@ slides-pdf:
 # DEVICE_ID is printed at boot ("config loaded for lumen-...").
 
 PROVISION_DIR := provision
-CDK_CONTEXT = -c deviceId=$(DEVICE_ID) -c budgetEmail=$(BUDGET_EMAIL)
+CDK_PARAMETERS = --parameters DeviceId=$(DEVICE_ID) --parameters BudgetEmail=$(BUDGET_EMAIL)
 
 .PHONY: require-device require-budget setup deploy fs-image provision-node teardown add-user deploy-fallback
 
@@ -63,12 +63,12 @@ require-budget:
 	@test -n "$(BUDGET_EMAIL)" || (echo "set BUDGET_EMAIL=you@example.com" && exit 1)
 
 setup: require-device require-budget
-	cd infra && npm ci && npx cdk bootstrap $(CDK_CONTEXT)
+	cd infra && npm ci && npx cdk bootstrap
 	$(MAKE) deploy provision-node flash
 
 deploy: require-device require-budget
 	cd dashboard && npm ci && npm run build:aws
-	cd infra && npm ci && npx cdk deploy --require-approval never $(CDK_CONTEXT)
+	cd infra && npm ci && npx cdk deploy --require-approval never $(CDK_PARAMETERS)
 
 # uploadfs replaces the whole ffat partition, so the image always holds the dashboard and the
 # cloud config together. the web server serves the .gz files directly.
@@ -84,8 +84,8 @@ provision-node: require-device
 	$(MAKE) fs-image
 	pio run -e lumen_esp32 --target uploadfs
 
-teardown: require-device require-budget
-	infra/scripts/teardown.sh $(PROVISION_DIR) $(DEVICE_ID) $(BUDGET_EMAIL)
+teardown: require-device
+	infra/scripts/teardown.sh $(PROVISION_DIR) $(DEVICE_ID)
 
 add-user:
 	@test -n "$(EMAIL)" || (echo "set EMAIL=person@example.com" && exit 1)

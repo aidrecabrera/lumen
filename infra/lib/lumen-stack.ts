@@ -1,4 +1,4 @@
-import { Aws, CfnOutput, Duration, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
+import { Aws, CfnOutput, CfnParameter, Duration, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
 import { CfnBudget } from 'aws-cdk-lib/aws-budgets';
 import { Distribution, ViewerProtocolPolicy } from 'aws-cdk-lib/aws-cloudfront';
 import { S3BucketOrigin } from 'aws-cdk-lib/aws-cloudfront-origins';
@@ -20,10 +20,8 @@ import { AwsCustomResource, AwsCustomResourcePolicy, PhysicalResourceId } from '
 import type { Construct } from 'constructs';
 
 export interface LumenStackProps extends StackProps {
-  deviceId: string;
   dashboardDir: string;
   callbackUrls: string[];
-  budgetEmail: string;
 }
 
 const DEV_URL = 'http://localhost:5173/';
@@ -31,7 +29,19 @@ const DEV_URL = 'http://localhost:5173/';
 export class LumenStack extends Stack {
   constructor(scope: Construct, id: string, props: LumenStackProps) {
     super(scope, id, props);
-    const { deviceId } = props;
+
+    // parameters, not context, so synth runs without them and cloudformation checks them at deploy
+    const deviceId = new CfnParameter(this, 'DeviceId', {
+      type: 'String',
+      allowedPattern: '^lumen-[0-9a-f]{12}$',
+      constraintDescription: 'lumen-<12 lower-case hex mac digits>, printed by the node at boot',
+    }).valueAsString;
+
+    const budgetEmail = new CfnParameter(this, 'BudgetEmail', {
+      type: 'String',
+      allowedPattern: '^[^@\\s]+@[^@\\s]+$',
+      constraintDescription: 'an email address for the $1 budget alert',
+    }).valueAsString;
 
     const arn = (resource: string) => `arn:${Aws.PARTITION}:iot:${Aws.REGION}:${Aws.ACCOUNT_ID}:${resource}`;
     const topic = (suffix: string) => arn(`topic/lumen/${deviceId}/${suffix}`);
@@ -94,7 +104,8 @@ export class LumenStack extends Stack {
     });
 
     const domain = userPool.addDomain('Domain', {
-      cognitoDomain: { domainPrefix: `${domainSafe(deviceId)}-${Aws.ACCOUNT_ID}` },
+      // the device id pattern is already a valid cognito domain prefix
+      cognitoDomain: { domainPrefix: `${deviceId}-${Aws.ACCOUNT_ID}` },
     });
 
     const redirectUrls = [...new Set([dashboardUrl, DEV_URL, ...props.callbackUrls])];
@@ -215,7 +226,7 @@ export class LumenStack extends Stack {
             threshold: 100,
             thresholdType: 'PERCENTAGE',
           },
-          subscribers: [{ subscriptionType: 'EMAIL', address: props.budgetEmail }],
+          subscribers: [{ subscriptionType: 'EMAIL', address: budgetEmail }],
         },
       ],
     });
@@ -236,6 +247,3 @@ export class LumenStack extends Stack {
   }
 }
 
-function domainSafe(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'lumen';
-}

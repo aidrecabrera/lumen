@@ -21,6 +21,7 @@
   },
   "include": [
     "bin",
-    "lib"
+    "lib",
+    "test"
   ]
 }

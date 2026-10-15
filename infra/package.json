@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "test": "node --test 'test/**/*.test.ts'",
     "synth": "cdk synth",
     "deploy": "cdk deploy --require-approval never",
     "destroy": "cdk destroy --force"
@@ -16,7 +17,8 @@
     "@types/node": "26.6.5",
     "aws-cdk": "2.1145.0",
     "tsx": "4.23.15",
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "valibot": "1.5.0"
   },
   "type": "module"
 }

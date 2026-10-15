@@ -4,7 +4,6 @@ set -euo pipefail
 
 out_dir=$1
 device_id=$2
-budget_email=$3
 here=$(dirname "$0")
 
 if [ -f "$out_dir/certificate-arn" ]; then
@@ -18,4 +17,4 @@ if [ -f "$out_dir/certificate-arn" ]; then
 fi
 
 cd "$here/.."
-npx cdk destroy --force -c deviceId="$device_id" -c budgetEmail="$budget_email"
+npx cdk destroy --force
